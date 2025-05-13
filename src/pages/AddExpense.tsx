@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useGroupContext } from '@/contexts/GroupContext';
 import Layout from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
@@ -14,36 +13,59 @@ import { Expense } from '@/types';
 const AddExpense = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { selectGroup, currentGroup, addExpense } = useGroupContext();
+  const location = useLocation();
+  const { selectGroup, currentGroup, addExpense, editExpense } = useGroupContext();
   
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [paidBy, setPaidBy] = useState('');
   const [participants, setParticipants] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
-  
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+
+  // Check if editing via query parameter
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const editId = query.get('edit');
+    if (editId && currentGroup) {
+      const expense = currentGroup.expenses.find(e => e.id === editId);
+      if (expense) {
+        setIsEditing(true);
+        setEditingExpenseId(editId);
+        setDescription(expense.description);
+        setAmount(expense.amount.toString());
+        setPaidBy(expense.paidBy);
+        const participantState: Record<string, boolean> = {};
+        currentGroup.members.forEach(member => {
+          participantState[member.id] = expense.participants.includes(member.id);
+        });
+        setParticipants(participantState);
+      }
+    }
+  }, [location.search, currentGroup]);
+
+  // Select group
   useEffect(() => {
     if (id) {
       selectGroup(id);
     }
   }, [id, selectGroup]);
-  
+
+  // Initialize form for new expense
   useEffect(() => {
-    if (currentGroup && currentGroup.members.length > 0) {
-      // Initialize the first member as payer if not set
+    if (currentGroup && currentGroup.members.length > 0 && !isEditing) {
       if (!paidBy) {
         setPaidBy(currentGroup.members[0].id);
       }
-      
-      // Initialize all members as participants by default
       const initialParticipants: Record<string, boolean> = {};
       currentGroup.members.forEach(member => {
         initialParticipants[member.id] = true;
       });
       setParticipants(initialParticipants);
     }
-  }, [currentGroup, paidBy]);
-  
+  }, [currentGroup, paidBy, isEditing]);
+
   if (!currentGroup) {
     return (
       <Layout title="Group Not Found" showBack>
@@ -53,41 +75,37 @@ const AddExpense = () => {
       </Layout>
     );
   }
-  
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
-    
+
     if (!description.trim()) {
       newErrors.description = 'Description is required';
     }
-    
+
     let parsedAmount = parseFloat(amount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       newErrors.amount = 'Please enter a valid amount';
-    } else {
-      // Round up to thousands if the amount is less than 1000
-      if (parsedAmount < 1000) {
-        parsedAmount = parsedAmount * 1000;
-      }
+    } else if (parsedAmount < 1000) {
+      parsedAmount = parsedAmount * 1000;
     }
-    
+
     if (!paidBy) {
       newErrors.paidBy = 'Please select who paid';
     }
-    
+
     const selectedParticipants = Object.entries(participants)
       .filter(([_, isSelected]) => isSelected)
       .map(([id]) => id);
-      
+
     if (selectedParticipants.length === 0) {
       newErrors.participants = 'Select at least one participant';
     }
-    
+
     setErrors(newErrors);
-    
+
     if (Object.keys(newErrors).length === 0) {
-      // Create the expense object
       const expenseData: Omit<Expense, "id"> = {
         description: description.trim(),
         amount: parsedAmount,
@@ -95,19 +113,21 @@ const AddExpense = () => {
         date: new Date().toISOString(),
         participants: selectedParticipants
       };
-      
-      addExpense(expenseData);
+
+      if (isEditing && editingExpenseId) {
+        editExpense(editingExpenseId, expenseData);
+      } else {
+        addExpense(expenseData);
+      }
       navigate(`/group/${currentGroup.id}`);
     }
   };
-  
+
   const toggleParticipant = (memberId: string) => {
     setParticipants(prev => ({
       ...prev,
       [memberId]: !prev[memberId]
     }));
-    
-    // Clear any participant errors when selections change
     if (errors.participants) {
       setErrors(prev => {
         const newErrors = { ...prev };
@@ -116,7 +136,7 @@ const AddExpense = () => {
       });
     }
   };
-  
+
   const handleSelectAllParticipants = () => {
     const newParticipants: Record<string, boolean> = {};
     currentGroup.members.forEach(member => {
@@ -124,7 +144,7 @@ const AddExpense = () => {
     });
     setParticipants(newParticipants);
   };
-  
+
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setAmount(e.target.value);
     if (errors.amount) {
@@ -135,14 +155,18 @@ const AddExpense = () => {
       });
     }
   };
-  
+
   return (
-    <Layout title="Add Expense" showBack={true} backTo={`/group/${currentGroup.id}`}>
+    <Layout 
+      title={isEditing ? "Edit Expense" : "Add Expense"} 
+      showBack={true} 
+      backTo={`/group/${currentGroup.id}`}
+    >
       <div className="max-w-md mx-auto">
         <Card>
           <form onSubmit={handleSubmit}>
             <CardHeader>
-              <CardTitle>Add a new expense</CardTitle>
+              <CardTitle>{isEditing ? "Edit Expense" : "Add a new expense"}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -168,7 +192,7 @@ const AddExpense = () => {
                     <p className="mt-1 text-sm text-red-500">{errors.description}</p>
                   )}
                 </div>
-                
+
                 <div>
                   <Label htmlFor="amount">Amount</Label>
                   <Input
@@ -187,7 +211,7 @@ const AddExpense = () => {
                     <p className="mt-1 text-sm text-red-500">{errors.amount}</p>
                   )}
                 </div>
-                
+
                 <div>
                   <Label htmlFor="paidBy">Paid by</Label>
                   <Select 
@@ -218,7 +242,7 @@ const AddExpense = () => {
                     <p className="mt-1 text-sm text-red-500">{errors.paidBy}</p>
                   )}
                 </div>
-                
+
                 <div>
                   <Label className="mb-2 block">Split with</Label>
                   <div className="mb-2">
@@ -252,8 +276,11 @@ const AddExpense = () => {
               </div>
             </CardContent>
             <CardFooter>
-              <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700">
-                Add Expense
+              <Button 
+                type="submit" 
+                className="w-full bg-purple-600 hover:bg-purple-700"
+              >
+                {isEditing ? "Update Expense" : "Add Expense"}
               </Button>
             </CardFooter>
           </form>

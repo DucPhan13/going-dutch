@@ -1,49 +1,59 @@
-
 import React from 'react';
-import { Card, CardContent } from '@/components/ui/card';
 import { Expense, Member } from '@/types';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Edit2, Trash2 } from 'lucide-react';
 
 interface ExpenseCardProps {
   expense: Expense;
   members: Member[];
+  onEdit: () => void;
+  onDelete: () => void;
 }
 
-export default function ExpenseCard({ expense, members }: ExpenseCardProps) {
-  const paidByMember = members.find(member => member.id === expense.paidBy);
-  const participantNames = members
-    .filter(member => expense.participants.includes(member.id))
-    .map(member => member.name)
-    .join(', ');
-  
-  const formattedDate = new Date(expense.date).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric'
-  });
-
-  // Format number with VND
-  const formatVND = (amount: number) => {
-    return amount.toLocaleString('vi-VN');
+const ExpenseCard: React.FC<ExpenseCardProps> = ({ expense, members, onEdit, onDelete }) => {
+  const getMemberName = (id: string) => {
+    return members.find(member => member.id === id)?.name || 'Unknown';
   };
 
   return (
-    <Card className="mb-3">
+    <Card>
       <CardContent className="p-4">
         <div className="flex justify-between items-start">
-          <div className="space-y-1">
+          <div>
             <h3 className="font-medium">{expense.description}</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Paid by {paidByMember?.name || 'Unknown'}
+              Paid by: {getMemberName(expense.paidBy)}
             </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">
-              Split with: {participantNames}
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Participants: {expense.participants.map(id => getMemberName(id)).join(', ')}
             </p>
+            {/* {expense.date && (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Date: {new Date(expense.date).toLocaleDateString('vi-VN')}
+              </p>
+            )} */}
           </div>
-          <div className="text-right">
-            <div className="font-semibold">{formatVND(expense.amount)} ₫</div>
-            <div className="text-xs text-gray-400 dark:text-gray-500">{formattedDate}</div>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="icon" onClick={onEdit}>
+              <Edit2 className="h-4 w-4" />
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="text-red-500 hover:text-red-700 hover:bg-red-100"
+              onClick={onDelete}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           </div>
         </div>
+        <p className="text-lg font-semibold mt-2">
+          {expense.amount.toLocaleString('vi-VN')} đ
+        </p>
       </CardContent>
     </Card>
   );
-}
+};
+
+export default ExpenseCard;

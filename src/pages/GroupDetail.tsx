@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useGroupContext } from '@/contexts/GroupContext';
@@ -9,14 +8,37 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ExpenseCard from '@/components/expenses/ExpenseCard';
 import BalancesList from '@/components/balances/BalancesList';
-import { Plus } from 'lucide-react';
+import TransactionList from '@/components/balances/TransactionList';
+import { Plus, Edit2, Trash2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
 
 const GroupDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { groups, selectGroup, currentGroup, addMember, calculateBalances } = useGroupContext();
+  const { 
+    groups, 
+    selectGroup, 
+    currentGroup, 
+    addMember, 
+    editMember,
+    removeMember,
+    removeExpense,
+    calculateBalances
+  } = useGroupContext();
+  const { toast } = useToast();
+  
   const [newMemberName, setNewMemberName] = useState('');
   const [activeTab, setActiveTab] = useState('expenses');
+  
+  const [editMemberDialogOpen, setEditMemberDialogOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState<{ id: string, name: string } | null>(null);
+  const [editedMemberName, setEditedMemberName] = useState('');
+  
+  const [deleteConfirmDialogOpen, setDeleteConfirmDialogOpen] = useState(false);
+  const [deleteItemType, setDeleteItemType] = useState<'member' | 'expense' | null>(null);
+  const [deleteItemId, setDeleteItemId] = useState<string | null>(null);
+  const [deleteItemName, setDeleteItemName] = useState('');
   
   useEffect(() => {
     if (id) {
@@ -44,6 +66,41 @@ const GroupDetail = () => {
       addMember(newMemberName.trim());
       setNewMemberName('');
     }
+  };
+  
+  const openEditMemberDialog = (member: { id: string, name: string }) => {
+    setEditingMember(member);
+    setEditedMemberName(member.name);
+    setEditMemberDialogOpen(true);
+  };
+  
+  const handleEditMember = () => {
+    if (editingMember && editedMemberName.trim()) {
+      editMember(editingMember.id, editedMemberName.trim());
+      setEditMemberDialogOpen(false);
+      setEditingMember(null);
+    }
+  };
+  
+  const openDeleteConfirmDialog = (type: 'member' | 'expense', id: string, name: string) => {
+    setDeleteItemType(type);
+    setDeleteItemId(id);
+    setDeleteItemName(name);
+    setDeleteConfirmDialogOpen(true);
+  };
+  
+  const handleDeleteConfirm = () => {
+    if (!deleteItemId || !deleteItemType) return;
+    
+    if (deleteItemType === 'member') {
+      removeMember(deleteItemId);
+    } else if (deleteItemType === 'expense') {
+      removeExpense(deleteItemId);
+    }
+    
+    setDeleteConfirmDialogOpen(false);
+    setDeleteItemId(null);
+    setDeleteItemType(null);
   };
   
   const balances = calculateBalances();
@@ -84,7 +141,9 @@ const GroupDetail = () => {
                   <ExpenseCard 
                     key={expense.id} 
                     expense={expense} 
-                    members={currentGroup.members} 
+                    members={currentGroup.members}
+                    onEdit={() => navigate(`/group/${currentGroup.id}/add-expense?edit=${expense.id}`)} 
+                    onDelete={() => openDeleteConfirmDialog('expense', expense.id, expense.description)}
                   />
                 ))}
               </div>
@@ -130,6 +189,23 @@ const GroupDetail = () => {
                     <CardContent className="p-4">
                       <div className="flex justify-between items-center">
                         <span className="font-medium">{member.name}</span>
+                        <div className="flex gap-2">
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => openEditMemberDialog(member)}
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            className="text-red-500 hover:text-red-700 hover:bg-red-100"
+                            onClick={() => openDeleteConfirmDialog('member', member.id, member.name)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -148,7 +224,10 @@ const GroupDetail = () => {
             </div>
             
             {currentGroup.expenses.length > 0 ? (
-              <BalancesList balances={balances} />
+              <>
+                <BalancesList balances={balances} />
+                <TransactionList />
+              </>
             ) : (
               <div className="text-center py-6 text-gray-500 dark:text-gray-400">
                 Add some expenses to see the balances
@@ -157,6 +236,55 @@ const GroupDetail = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={editMemberDialogOpen} onOpenChange={setEditMemberDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Member</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              placeholder="Member name"
+              value={editedMemberName}
+              onChange={(e) => setEditedMemberName(e.target.value)}
+              className="w-full"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditMemberDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleEditMember}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteConfirmDialogOpen} onOpenChange={setDeleteConfirmDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Delete</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p>
+              Are you sure you want to delete this {deleteItemType}?
+              <br />
+              <span className="font-medium">{deleteItemName}</span>
+            </p>
+            {deleteItemType === 'member' && (
+              <p className="text-sm text-gray-500 mt-2">
+                Note: You cannot delete members that are part of expenses.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmDialogOpen(false)}>Cancel</Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleDeleteConfirm}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 };
