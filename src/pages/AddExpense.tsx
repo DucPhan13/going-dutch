@@ -62,9 +62,14 @@ const AddExpense = () => {
       newErrors.description = 'Description is required';
     }
     
-    const parsedAmount = parseFloat(amount);
+    let parsedAmount = parseFloat(amount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       newErrors.amount = 'Please enter a valid amount';
+    } else {
+      // Round up to thousands if the amount is less than 1000
+      if (parsedAmount < 1000) {
+        parsedAmount = parsedAmount * 1000;
+      }
     }
     
     if (!paidBy) {
@@ -120,6 +125,17 @@ const AddExpense = () => {
     setParticipants(newParticipants);
   };
   
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setAmount(e.target.value);
+    if (errors.amount) {
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.amount;
+        return newErrors;
+      });
+    }
+  };
+  
   return (
     <Layout title="Add Expense" showBack={true} backTo={`/group/${currentGroup.id}`}>
       <div className="max-w-md mx-auto">
@@ -161,18 +177,12 @@ const AddExpense = () => {
                     step="0.01"
                     placeholder="0.00"
                     value={amount}
-                    onChange={(e) => {
-                      setAmount(e.target.value);
-                      if (errors.amount) {
-                        setErrors(prev => {
-                          const newErrors = { ...prev };
-                          delete newErrors.amount;
-                          return newErrors;
-                        });
-                      }
-                    }}
+                    onChange={handleAmountChange}
                     className={errors.amount ? "border-red-500" : ""}
                   />
+                  <p className="mt-1 text-xs text-gray-400">
+                    *Numbers less than 1000 will be converted to thousands (e.g., 100 → 100,000đ)
+                  </p>
                   {errors.amount && (
                     <p className="mt-1 text-sm text-red-500">{errors.amount}</p>
                   )}
@@ -242,7 +252,7 @@ const AddExpense = () => {
               </div>
             </CardContent>
             <CardFooter>
-              <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700">
+              <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700">
                 Add Expense
               </Button>
             </CardFooter>
