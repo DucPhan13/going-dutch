@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState } from "react";
 import { Group, Member, Expense, Balance } from "@/types";
 import { v4 as uuidv4 } from "uuid";
@@ -9,7 +8,7 @@ interface GroupContextType {
   currentGroup: Group | null;
   createGroup: (name: string) => void;
   selectGroup: (id: string) => void;
-  addMember: (name: string) => void;
+  addMember: (nameInput: string) => void;
   addExpense: (expense: Omit<Expense, "id">) => void;
   calculateBalances: () => Balance[];
 }
@@ -43,23 +42,30 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCurrentGroupId(id);
   };
 
-  const addMember = (name: string) => {
+  const addMember = (nameInput: string) => {
     if (!currentGroup) return;
     
-    const newMember: Member = {
+    // Split by comma and process each name
+    const names = nameInput.split(',').map(name => name.trim()).filter(name => name !== '');
+    
+    if (names.length === 0) return;
+    
+    const newMembers: Member[] = names.map(name => ({
       id: uuidv4(),
       name,
-    };
+    }));
 
     setGroups(groups.map(group => 
       group.id === currentGroup.id 
-        ? { ...group, members: [...group.members, newMember] }
+        ? { ...group, members: [...group.members, ...newMembers] }
         : group
     ));
     
     toast({
-      title: "Member added",
-      description: `${name} has been added to ${currentGroup.name}.`,
+      title: names.length > 1 ? "Members added" : "Member added",
+      description: names.length > 1 
+        ? `${names.length} members have been added to ${currentGroup.name}.`
+        : `${names[0]} has been added to ${currentGroup.name}.`,
     });
   };
 

@@ -13,6 +13,11 @@ export default function GroupCard({ group }: GroupCardProps) {
   
   const totalExpenses = group.expenses.reduce((sum, expense) => sum + expense.amount, 0);
   
+  // Format number with VND
+  const formatVND = (amount: number) => {
+    return amount.toLocaleString('vi-VN');
+  };
+  
   return (
     <Card 
       className="cursor-pointer hover:shadow-lg transition-shadow"
@@ -23,16 +28,16 @@ export default function GroupCard({ group }: GroupCardProps) {
       </CardHeader>
       <CardContent>
         <div className="flex justify-between text-sm mb-2">
-          <span className="text-gray-500">Members:</span>
+          <span className="text-gray-500 dark:text-gray-400">Members:</span>
           <span className="font-medium">{group.members.length}</span>
         </div>
         <div className="flex justify-between text-sm mb-2">
-          <span className="text-gray-500">Expenses:</span>
+          <span className="text-gray-500 dark:text-gray-400">Expenses:</span>
           <span className="font-medium">{group.expenses.length}</span>
         </div>
         <div className="flex justify-between text-sm">
-          <span className="text-gray-500">Total:</span>
-          <span className="font-medium">${totalExpenses.toFixed(2)}</span>
+          <span className="text-gray-500 dark:text-gray-400">Total:</span>
+          <span className="font-medium">{formatVND(totalExpenses)} ₫</span>
         </div>
       </CardContent>
     </Card>

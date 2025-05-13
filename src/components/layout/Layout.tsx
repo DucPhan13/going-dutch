@@ -11,7 +11,7 @@ interface LayoutProps {
 
 export default function Layout({ children, title, showBack, backTo }: LayoutProps) {
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
       <Header title={title} showBack={showBack} backTo={backTo} />
       <main className="flex-1 p-4 sm:p-6 container mx-auto max-w-3xl">
         {children}

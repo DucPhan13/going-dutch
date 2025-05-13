@@ -29,7 +29,7 @@ const GroupDetail = () => {
       <Layout title="Group Not Found" showBack>
         <div className="text-center py-12">
           <h2 className="text-xl font-semibold mb-2">Group not found</h2>
-          <p className="text-gray-500 mb-6">The group you're looking for doesn't exist.</p>
+          <p className="text-gray-500 dark:text-gray-400 mb-6">The group you're looking for doesn't exist.</p>
           <Button onClick={() => navigate('/')} variant="outline">
             Go to Dashboard
           </Button>
@@ -64,7 +64,7 @@ const GroupDetail = () => {
               {currentGroup.members.length > 0 && (
                 <Button 
                   onClick={() => navigate(`/group/${currentGroup.id}/add-expense`)}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="bg-purple-600 hover:bg-purple-700 dark:bg-purple-700 dark:hover:bg-purple-800"
                 >
                   <Plus className="mr-2 h-4 w-4" /> Add Expense
                 </Button>
@@ -73,7 +73,7 @@ const GroupDetail = () => {
             
             {currentGroup.members.length === 0 ? (
               <div className="text-center py-6">
-                <p className="text-gray-500 mb-4">Add members to start tracking expenses</p>
+                <p className="text-gray-500 dark:text-gray-400 mb-4">Add members to start tracking expenses</p>
                 <Button onClick={() => setActiveTab('members')} variant="outline">
                   Add Members
                 </Button>
@@ -90,10 +90,10 @@ const GroupDetail = () => {
               </div>
             ) : (
               <div className="text-center py-6">
-                <p className="text-gray-500 mb-4">No expenses yet</p>
+                <p className="text-gray-500 dark:text-gray-400 mb-4">No expenses yet</p>
                 <Button 
                   onClick={() => navigate(`/group/${currentGroup.id}/add-expense`)}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="bg-purple-600 hover:bg-purple-700 dark:bg-purple-700 dark:hover:bg-purple-800"
                 >
                   <Plus className="mr-2 h-4 w-4" /> Add First Expense
                 </Button>
@@ -104,18 +104,19 @@ const GroupDetail = () => {
           <TabsContent value="members">
             <div className="mb-4">
               <h2 className="text-lg font-semibold">Members</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">You can add multiple members at once by separating names with commas</p>
             </div>
             
             <Card className="mb-6">
               <CardContent className="p-4">
                 <form onSubmit={handleAddMember} className="flex space-x-2">
                   <Input
-                    placeholder="Enter member name"
+                    placeholder="Enter member name(s), e.g. John, Jane, Bob"
                     value={newMemberName}
                     onChange={(e) => setNewMemberName(e.target.value)}
                     className="flex-1"
                   />
-                  <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
+                  <Button type="submit" className="bg-purple-600 hover:bg-purple-700 dark:bg-purple-700 dark:hover:bg-purple-800">
                     Add
                   </Button>
                 </form>
@@ -125,7 +126,7 @@ const GroupDetail = () => {
             {currentGroup.members.length > 0 ? (
               <div className="space-y-3">
                 {currentGroup.members.map((member) => (
-                  <Card key={member.id} className="bg-white">
+                  <Card key={member.id}>
                     <CardContent className="p-4">
                       <div className="flex justify-between items-center">
                         <span className="font-medium">{member.name}</span>
@@ -135,7 +136,7 @@ const GroupDetail = () => {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-6 text-gray-500">
+              <div className="text-center py-6 text-gray-500 dark:text-gray-400">
                 No members yet
               </div>
             )}
@@ -149,7 +150,7 @@ const GroupDetail = () => {
             {currentGroup.expenses.length > 0 ? (
               <BalancesList balances={balances} />
             ) : (
-              <div className="text-center py-6 text-gray-500">
+              <div className="text-center py-6 text-gray-500 dark:text-gray-400">
                 Add some expenses to see the balances
               </div>
             )}
