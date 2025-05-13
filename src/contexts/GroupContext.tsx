@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState } from "react";
 import { Group, Member, Expense, Balance } from "@/types";
 import { v4 as uuidv4 } from "uuid";
@@ -11,6 +12,9 @@ interface GroupContextType {
   addMember: (nameInput: string) => void;
   addExpense: (expense: Omit<Expense, "id">) => void;
   calculateBalances: () => Balance[];
+  markBalanceAsPaid: (balance: Balance) => void;
+  clearPaidBalances: () => void;
+  paidBalances: Balance[];
 }
 
 const GroupContext = createContext<GroupContextType | undefined>(undefined);
@@ -18,6 +22,7 @@ const GroupContext = createContext<GroupContextType | undefined>(undefined);
 export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [currentGroupId, setCurrentGroupId] = useState<string | null>(null);
+  const [paidBalances, setPaidBalances] = useState<Balance[]>([]);
   const { toast } = useToast();
 
   const currentGroup = groups.find(g => g.id === currentGroupId) || null;
@@ -40,6 +45,8 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const selectGroup = (id: string) => {
     setCurrentGroupId(id);
+    // Clear paid balances when switching groups
+    setPaidBalances([]);
   };
 
   const addMember = (nameInput: string) => {
@@ -125,10 +132,13 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         
         const paymentAmount = Math.min(remainingDebt, memberBalances[creditor.id]);
         if (paymentAmount > 0.01) { // Ignore tiny amounts
+          // Round up to the nearest 1000 đồng
+          const roundedAmount = Math.ceil(paymentAmount / 1000) * 1000;
+          
           balances.push({
             from: debtor.id,
             to: creditor.id,
-            amount: parseFloat(paymentAmount.toFixed(2))
+            amount: roundedAmount
           });
           
           remainingDebt -= paymentAmount;
@@ -139,7 +149,40 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
 
-    return balances;
+    // Filter out balances that have been marked as paid
+    return balances.filter(balance => 
+      !paidBalances.some(paid => 
+        paid.from === balance.from && 
+        paid.to === balance.to && 
+        paid.amount === balance.amount
+      )
+    );
+  };
+
+  const markBalanceAsPaid = (balance: Balance) => {
+    setPaidBalances([...paidBalances, balance]);
+    
+    // Log the transaction as paid
+    console.log(`Transaction marked as paid: ${balance.amount.toLocaleString('vi-VN')} đ from ${
+      currentGroup?.members.find(m => m.id === balance.from)?.name
+    } to ${
+      currentGroup?.members.find(m => m.id === balance.to)?.name
+    }`);
+    
+    toast({
+      title: "Transaction marked as paid",
+      description: `${balance.amount.toLocaleString('vi-VN')} đ has been marked as paid.`,
+    });
+  };
+
+  const clearPaidBalances = () => {
+    const count = paidBalances.length;
+    setPaidBalances([]);
+    
+    toast({
+      title: "Paid transactions cleared",
+      description: `${count} transaction${count !== 1 ? 's' : ''} cleared successfully.`,
+    });
   };
 
   return (
@@ -150,7 +193,10 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       selectGroup,
       addMember,
       addExpense,
-      calculateBalances
+      calculateBalances,
+      markBalanceAsPaid,
+      clearPaidBalances,
+      paidBalances
     }}>
       {children}
     </GroupContext.Provider>
