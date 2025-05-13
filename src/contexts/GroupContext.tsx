@@ -1,6 +1,5 @@
-
-import React, { createContext, useContext, useState } from "react";
-import { Group, Member, Expense, Balance } from "@/types";
+import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { Group, Member, Expense, Balance, Transaction } from "@/types";
 import { v4 as uuidv4 } from "uuid";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -10,29 +9,48 @@ interface GroupContextType {
   createGroup: (name: string) => void;
   selectGroup: (id: string) => void;
   addMember: (nameInput: string) => void;
+  editMember: (id: string, name: string) => void;
+  removeMember: (id: string) => void;
   addExpense: (expense: Omit<Expense, "id">) => void;
+  editExpense: (id: string, expense: Omit<Expense, "id">) => void;
+  removeExpense: (id: string) => void;
   calculateBalances: () => Balance[];
   markBalanceAsPaid: (balance: Balance) => void;
-  clearPaidBalances: () => void;
-  paidBalances: Balance[];
+  clearTransactions: () => void;
 }
 
 const GroupContext = createContext<GroupContextType | undefined>(undefined);
 
 export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [groups, setGroups] = useState<Group[]>([]);
+  const [groups, setGroups] = useState<Group[]>(() => {
+    const saved = localStorage.getItem("groups");
+    return saved ? JSON.parse(saved) : [];
+  });
   const [currentGroupId, setCurrentGroupId] = useState<string | null>(null);
-  const [paidBalances, setPaidBalances] = useState<Balance[]>([]);
   const { toast } = useToast();
+
+  // Persist groups (including transactions) to localStorage
+  useEffect(() => {
+    localStorage.setItem("groups", JSON.stringify(groups));
+  }, [groups]);
 
   const currentGroup = groups.find(g => g.id === currentGroupId) || null;
 
   const createGroup = (name: string) => {
+    if (!name.trim()) {
+      toast({
+        title: "Error",
+        description: "Group name cannot be empty.",
+        variant: "destructive",
+      });
+      return;
+    }
     const newGroup: Group = {
       id: uuidv4(),
       name,
       members: [],
-      expenses: []
+      expenses: [],
+      transactions: []
     };
     
     setGroups([...groups, newGroup]);
@@ -44,18 +62,37 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const selectGroup = (id: string) => {
+    if (!groups.some(g => g.id === id)) {
+      toast({
+        title: "Error",
+        description: "Selected group does not exist.",
+        variant: "destructive",
+      });
+      return;
+    }
     setCurrentGroupId(id);
-    // Clear paid balances when switching groups
-    setPaidBalances([]);
   };
 
   const addMember = (nameInput: string) => {
-    if (!currentGroup) return;
+    if (!currentGroup) {
+      toast({
+        title: "Error",
+        description: "No group selected.",
+        variant: "destructive",
+      });
+      return;
+    }
     
-    // Split by comma and process each name
     const names = nameInput.split(',').map(name => name.trim()).filter(name => name !== '');
     
-    if (names.length === 0) return;
+    if (names.length === 0) {
+      toast({
+        title: "Error",
+        description: "No valid names provided.",
+        variant: "destructive",
+      });
+      return;
+    }
     
     const newMembers: Member[] = names.map(name => ({
       id: uuidv4(),
@@ -76,9 +113,101 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
-  const addExpense = (expenseData: Omit<Expense, "id">) => {
-    if (!currentGroup) return;
+  const editMember = (id: string, name: string) => {
+    if (!currentGroup) {
+      toast({
+        title: "Error",
+        description: "No group selected.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!name.trim()) {
+      toast({
+        title: "Error",
+        description: "Member name cannot be empty.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setGroups(groups.map(group => 
+      group.id === currentGroup.id 
+        ? { 
+            ...group, 
+            members: group.members.map(member => 
+              member.id === id ? { ...member, name } : member
+            )
+          }
+        : group
+    ));
     
+    toast({
+      title: "Member updated",
+      description: `The member has been updated to "${name}".`,
+    });
+  };
+
+  const removeMember = (id: string) => {
+    if (!currentGroup) {
+      toast({
+        title: "Error",
+        description: "No group selected.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const memberInExpenses = currentGroup.expenses.some(
+      expense => expense.paidBy === id || expense.participants.includes(id)
+    );
+
+    if (memberInExpenses) {
+      toast({
+        title: "Cannot remove member",
+        description: "This member is part of one or more expenses. Edit the expenses first.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const memberName = currentGroup.members.find(m => m.id === id)?.name || "Member";
+
+    setGroups(groups.map(group => 
+      group.id === currentGroup.id 
+        ? { 
+            ...group, 
+            members: group.members.filter(member => member.id !== id)
+          }
+        : group
+    ));
+    
+    toast({
+      title: "Member removed",
+      description: `${memberName} has been removed from the group.`,
+    });
+  };
+
+  const addExpense = (expenseData: Omit<Expense, "id">) => {
+    if (!currentGroup) {
+      toast({
+        title: "Error",
+        description: "No group selected.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (expenseData.amount <= 0) {
+      toast({
+        title: "Error",
+        description: "Expense amount must be positive.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const newExpense: Expense = {
       id: uuidv4(),
       ...expenseData
@@ -96,92 +225,225 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
-  const calculateBalances = (): Balance[] => {
+  const editExpense = (id: string, expenseData: Omit<Expense, "id">) => {
+    if (!currentGroup) {
+      toast({
+        title: "Error",
+        description: "No group selected.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (expenseData.amount <= 0) {
+      toast({
+        title: "Error",
+        description: "Expense amount must be positive.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setGroups(groups.map(group => 
+      group.id === currentGroup.id 
+        ? { 
+            ...group, 
+            expenses: group.expenses.map(expense => 
+              expense.id === id ? { ...expenseData, id } : expense
+            )
+          }
+        : group
+    ));
+    
+    toast({
+      title: "Expense updated",
+      description: `${expenseData.description} (${expenseData.amount.toFixed(2)}) has been updated.`,
+    });
+  };
+
+  const removeExpense = (id: string) => {
+    if (!currentGroup) {
+      toast({
+        title: "Error",
+        description: "No group selected.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const expense = currentGroup.expenses.find(e => e.id === id);
+    
+    if (!expense) {
+      toast({
+        title: "Error",
+        description: "Expense not found.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setGroups(groups.map(group => 
+      group.id === currentGroup.id 
+        ? { 
+            ...group, 
+            expenses: group.expenses.filter(expense => expense.id !== id)
+          }
+        : group
+    ));
+    
+    toast({
+      title: "Expense removed",
+      description: `${expense.description} (${expense.amount.toFixed(2)}) has been removed.`,
+    });
+  };
+
+  const calculateBalances = useCallback((): Balance[] => {
     if (!currentGroup) return [];
 
-    // Calculate how much each person has spent and owes
     const memberBalances: Record<string, number> = {};
-    
-    // Initialize all members with zero balance
     currentGroup.members.forEach(member => {
       memberBalances[member.id] = 0;
     });
 
-    // Process all expenses
     currentGroup.expenses.forEach(expense => {
-      // Add the full amount to the person who paid
       memberBalances[expense.paidBy] += expense.amount;
-      
-      // Calculate per-person share and subtract from participants
       const perPersonAmount = expense.amount / expense.participants.length;
       expense.participants.forEach(participantId => {
         memberBalances[participantId] -= perPersonAmount;
       });
     });
 
-    // Convert to a list of transactions
     const balances: Balance[] = [];
-    const debtors = currentGroup.members.filter(m => memberBalances[m.id] < 0);
-    const creditors = currentGroup.members.filter(m => memberBalances[m.id] > 0);
-    
+    const debtors = currentGroup.members.filter(m => memberBalances[m.id] < -0.01);
+    const creditors = currentGroup.members.filter(m => memberBalances[m.id] > 0.01);
+
     debtors.forEach(debtor => {
       let remainingDebt = Math.abs(memberBalances[debtor.id]);
-      
       for (const creditor of creditors) {
-        if (memberBalances[creditor.id] <= 0) continue;
-        
+        if (memberBalances[creditor.id] <= 0.01) continue;
         const paymentAmount = Math.min(remainingDebt, memberBalances[creditor.id]);
-        if (paymentAmount > 0.01) { // Ignore tiny amounts
-          // Round up to the nearest 1000 đồng
+        if (paymentAmount > 0.01) {
           const roundedAmount = Math.ceil(paymentAmount / 1000) * 1000;
-          
           balances.push({
+            id: uuidv4(),
             from: debtor.id,
             to: creditor.id,
             amount: roundedAmount
           });
-          
           remainingDebt -= paymentAmount;
           memberBalances[creditor.id] -= paymentAmount;
         }
-        
         if (remainingDebt < 0.01) break;
       }
     });
 
-    // Filter out balances that have been marked as paid
+    // Filter out balances that have been paid (recorded as transactions)
     return balances.filter(balance => 
-      !paidBalances.some(paid => 
-        paid.from === balance.from && 
-        paid.to === balance.to && 
-        paid.amount === balance.amount
+      !currentGroup.transactions.some(tx => 
+        tx.originalBalanceId === balance.id ||
+        (tx.from === balance.from && 
+         tx.to === balance.to && 
+         Math.abs(tx.amount - balance.amount) < 1000)
       )
     );
-  };
+  }, [currentGroup]);
 
   const markBalanceAsPaid = (balance: Balance) => {
-    setPaidBalances([...paidBalances, balance]);
+    if (!currentGroup) {
+      toast({
+        title: "Error",
+        description: "No group selected.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate balance
+    if (!currentGroup.members.some(m => m.id === balance.from) || 
+        !currentGroup.members.some(m => m.id === balance.to)) {
+      toast({
+        title: "Error",
+        description: "Invalid balance: one or more members not found.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (balance.amount <= 0) {
+      toast({
+        title: "Error",
+        description: "Balance amount must be positive.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Prevent duplicate transactions
+    if (currentGroup.transactions.some(tx => tx.originalBalanceId === balance.id)) {
+      toast({
+        title: "Error",
+        description: "This balance has already been recorded as a transaction.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Create a new transaction
+    const transaction: Transaction = {
+      id: uuidv4(),
+      from: balance.from,
+      to: balance.to,
+      amount: balance.amount,
+      paidAt: new Date().toISOString(),
+      originalBalanceId: balance.id
+    };
     
-    // Log the transaction as paid
-    console.log(`Transaction marked as paid: ${balance.amount.toLocaleString('vi-VN')} đ from ${
-      currentGroup?.members.find(m => m.id === balance.from)?.name
-    } to ${
-      currentGroup?.members.find(m => m.id === balance.to)?.name
-    }`);
+    setGroups(groups.map(group => 
+      group.id === currentGroup.id 
+        ? { ...group, transactions: [...group.transactions, transaction] }
+        : group
+    ));
+    
+    const fromName = currentGroup.members.find(m => m.id === balance.from)?.name || "Unknown";
+    const toName = currentGroup.members.find(m => m.id === balance.to)?.name || "Unknown";
+    
+    console.log({
+      event: "transaction_created",
+      groupId: currentGroup.id,
+      transactionId: transaction.id,
+      originalBalanceId: balance.id,
+      amount: balance.amount.toLocaleString("vi-VN") + " đ",
+      from: fromName,
+      to: toName,
+      paidAt: transaction.paidAt,
+    });
     
     toast({
-      title: "Transaction marked as paid",
-      description: `${balance.amount.toLocaleString('vi-VN')} đ has been marked as paid.`,
+      title: "Transaction created",
+      description: `${balance.amount.toLocaleString("vi-VN")} đ from ${fromName} to ${toName} has been recorded.`,
     });
   };
 
-  const clearPaidBalances = () => {
-    const count = paidBalances.length;
-    setPaidBalances([]);
+  const clearTransactions = () => {
+    if (!currentGroup) {
+      toast({
+        title: "Error",
+        description: "No group selected.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const count = currentGroup.transactions.length;
+    setGroups(groups.map(group => 
+      group.id === currentGroup.id 
+        ? { ...group, transactions: [] }
+        : group
+    ));
     
     toast({
-      title: "Paid transactions cleared",
-      description: `${count} transaction${count !== 1 ? 's' : ''} cleared successfully.`,
+      title: "Transaction history cleared",
+      description: `${count} transaction${count !== 1 ? "s" : ""} cleared successfully.`,
     });
   };
 
@@ -192,11 +454,14 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       createGroup,
       selectGroup,
       addMember,
+      editMember,
+      removeMember,
       addExpense,
+      editExpense,
+      removeExpense,
       calculateBalances,
       markBalanceAsPaid,
-      clearPaidBalances,
-      paidBalances
+      clearTransactions,
     }}>
       {children}
     </GroupContext.Provider>

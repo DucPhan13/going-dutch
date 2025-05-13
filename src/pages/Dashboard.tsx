@@ -12,7 +12,7 @@ const Dashboard = () => {
   const { groups } = useGroupContext();
   
   return (
-    <Layout title="SplitIt">
+    <Layout title="Going Dutch">
       <div className="mb-6 flex justify-between items-center">
         <h2 className="text-xl font-semibold">Your Groups</h2>
         <Button onClick={() => navigate('/create-group')} className="bg-blue-600 hover:bg-blue-700">
