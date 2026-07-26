@@ -9,6 +9,9 @@ import Dashboard from "@/pages/Dashboard";
 import GroupDetail from "@/pages/GroupDetail";
 import CreateGroup from "@/pages/CreateGroup";
 import AddExpense from "@/pages/AddExpense";
+import Friends from "@/pages/Friends";
+import Activity from "@/pages/Activity";
+import SettleUp from "@/pages/SettleUp";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,6 +28,9 @@ const App = () => (
             <Route path="/create-group" element={<CreateGroup />} />
             <Route path="/group/:id" element={<GroupDetail />} />
             <Route path="/group/:id/add-expense" element={<AddExpense />} />
+            <Route path="/group/:id/settle-up" element={<SettleUp />} />
+            <Route path="/friends" element={<Friends />} />
+            <Route path="/activity" element={<Activity />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

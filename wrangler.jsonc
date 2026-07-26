@@ -1,15 +1,7 @@
 {
   "name": "going-dutch",
   "compatibility_date": "2025-04-29",
-  "build": {
-    "command": "bun install && bun run build",
-    "directory": "./dist"
-  },
   "assets": {
     "not_found_handling": "single-page-application"
-  },
-  // Static site assets
-  "site": {
-    "bucket": "./dist"
   }
 }

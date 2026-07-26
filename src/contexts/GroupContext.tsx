@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from "react";
 import { Group, Member, Expense, Balance, Transaction } from "@/types";
 import { v4 as uuidv4 } from "uuid";
 import { useToast } from "@/components/ui/use-toast";
@@ -9,13 +9,14 @@ interface GroupContextType {
   createGroup: (name: string) => void;
   selectGroup: (id: string) => void;
   addMember: (nameInput: string) => void;
+  addMemberToGroup: (groupId: string, name: string) => void;
   editMember: (id: string, name: string) => void;
   removeMember: (id: string) => void;
   addExpense: (expense: Omit<Expense, "id">) => void;
   editExpense: (id: string, expense: Omit<Expense, "id">) => void;
   removeExpense: (id: string) => void;
   calculateBalances: () => Balance[];
-  markBalanceAsPaid: (balance: Balance) => void;
+  markBalanceAsPaid: (balance: Balance, paymentMethod?: string) => void;
   clearTransactions: () => void;
 }
 
@@ -61,17 +62,9 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
-  const selectGroup = (id: string) => {
-    if (!groups.some(g => g.id === id)) {
-      toast({
-        title: "Error",
-        description: "Selected group does not exist.",
-        variant: "destructive",
-      });
-      return;
-    }
+  const selectGroup = useCallback((id: string) => {
     setCurrentGroupId(id);
-  };
+  }, []);
 
   const addMember = (nameInput: string) => {
     if (!currentGroup) {
@@ -111,6 +104,14 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ? `${names.length} members have been added to ${currentGroup.name}.`
         : `${names[0]} has been added to ${currentGroup.name}.`,
     });
+  };
+
+  const addMemberToGroup = (groupId: string, name: string) => {
+    const trimmedName = name.trim();
+    const group = groups.find(item => item.id === groupId);
+    if (!trimmedName || !group) return;
+    setGroups(groups.map(item => item.id === groupId ? { ...item, members: [...item.members, { id: uuidv4(), name: trimmedName }] } : item));
+    toast({ title: 'Friend added', description: `${trimmedName} was added to ${group.name}.` });
   };
 
   const editMember = (id: string, name: string) => {
@@ -307,9 +308,15 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     currentGroup.expenses.forEach(expense => {
       memberBalances[expense.paidBy] += expense.amount;
-      const perPersonAmount = expense.amount / expense.participants.length;
+      const values = expense.splitValues || {};
+      const totalValue = expense.participants.reduce((sum, id) => sum + (values[id] || 0), 0);
       expense.participants.forEach(participantId => {
-        memberBalances[participantId] -= perPersonAmount;
+        let share = expense.amount / expense.participants.length;
+        if (expense.splitType === 'exact') share = values[participantId] || 0;
+        if (expense.splitType === 'percentage' || expense.splitType === 'shares' || expense.splitType === 'unequal') {
+          share = totalValue > 0 ? expense.amount * ((values[participantId] || 0) / totalValue) : share;
+        }
+        memberBalances[participantId] -= share;
       });
     });
 
@@ -348,7 +355,7 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   }, [currentGroup]);
 
-  const markBalanceAsPaid = (balance: Balance) => {
+  const markBalanceAsPaid = (balance: Balance, paymentMethod = 'Cash') => {
     if (!currentGroup) {
       toast({
         title: "Error",
@@ -395,7 +402,8 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       to: balance.to,
       amount: balance.amount,
       paidAt: new Date().toISOString(),
-      originalBalanceId: balance.id
+      originalBalanceId: balance.id,
+      paymentMethod,
     };
     
     setGroups(groups.map(group => 
@@ -406,17 +414,6 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     
     const fromName = currentGroup.members.find(m => m.id === balance.from)?.name || "Unknown";
     const toName = currentGroup.members.find(m => m.id === balance.to)?.name || "Unknown";
-    
-    console.log({
-      event: "transaction_created",
-      groupId: currentGroup.id,
-      transactionId: transaction.id,
-      originalBalanceId: balance.id,
-      amount: balance.amount.toLocaleString("vi-VN") + " đ",
-      from: fromName,
-      to: toName,
-      paidAt: transaction.paidAt,
-    });
     
     toast({
       title: "Transaction created",
@@ -454,6 +451,7 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       createGroup,
       selectGroup,
       addMember,
+      addMemberToGroup,
       editMember,
       removeMember,
       addExpense,

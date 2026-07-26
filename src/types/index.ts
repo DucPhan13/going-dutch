@@ -10,6 +10,11 @@ export interface Expense {
   paidBy: string;
   participants: string[];
   date?: string;
+  category?: string;
+  notes?: string;
+  receiptData?: string;
+  splitType?: 'equal' | 'unequal' | 'shares' | 'percentage' | 'exact';
+  splitValues?: Record<string, number>;
 }
 
 export interface Balance {
@@ -26,6 +31,7 @@ export interface Transaction {
   amount: number;
   paidAt: string;
   originalBalanceId: string;
+  paymentMethod?: string;
 }
 
 export interface Group {
