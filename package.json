@@ -1,5 +1,6 @@
 {
   "name": "vite_react_shadcn_ts",
+  "description": "Split the tab for nights out, trips, and groups. Your data stays in your browser.",
   "private": true,
   "version": "0.0.0",
   "type": "module",
