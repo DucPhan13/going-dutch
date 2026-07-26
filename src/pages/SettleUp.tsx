@@ -1,0 +1,17 @@
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { CheckCircle2, Landmark, WalletCards } from 'lucide-react';
+import Layout from '@/components/layout/Layout';
+import { useGroupContext } from '@/contexts/GroupContext';
+import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import Avatar from '@/components/ui/Avatar';
+
+export default function SettleUp() {
+  const { id } = useParams<{id:string}>(); const navigate = useNavigate(); const { selectGroup, currentGroup, calculateBalances, markBalanceAsPaid } = useGroupContext(); const [method, setMethod] = useState('Bank transfer');
+  useEffect(() => { if (id) selectGroup(id); }, [id, selectGroup]);
+  if (!currentGroup) return <Layout title="Settle up" showBack><div className="app-surface p-8 text-center text-muted-foreground">This group is no longer available.</div></Layout>;
+  const balances = calculateBalances(); const member = (memberId: string) => currentGroup.members.find(item => item.id === memberId)?.name || 'Unknown';
+  return <Layout title="Settle up" showBack backTo={`/group/${currentGroup.id}`}><div className="mx-auto max-w-2xl"><section className="app-surface-strong p-6"><div className="flex items-start gap-3"><div className="icon-tile grid h-11 w-11 place-items-center"><WalletCards className="h-5 w-5 balance-positive" /></div><div><p className="section-label">{currentGroup.name}</p><h1 className="mt-1 text-2xl font-semibold">Settle up</h1><p className="mt-1 text-sm text-muted-foreground">Record a payment and keep the group ledger current.</p></div></div><div className="mt-6 max-w-xs"><p className="mb-2 text-sm font-medium">Payment method</p><Select value={method} onValueChange={setMethod}><SelectTrigger className="app-input h-11"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Bank transfer">Bank transfer</SelectItem><SelectItem value="Cash">Cash</SelectItem><SelectItem value="E-wallet">E-wallet</SelectItem></SelectContent></Select></div></section>
+    <section className="mt-6"><div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-semibold">Suggested payments</h2><span className="text-sm text-muted-foreground">Simplified debts</span></div>{balances.length ? <div className="space-y-3">{balances.map(balance => <div key={balance.id} className="app-surface flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><Avatar name={member(balance.from)} className="h-10 w-10" /><div><p className="text-sm text-muted-foreground"><span className="font-medium text-foreground">{member(balance.from)}</span> pays <span className="font-medium text-foreground">{member(balance.to)}</span></p><p className="amount mt-1 text-xl font-semibold balance-negative">{balance.amount.toLocaleString('vi-VN')} đ</p></div></div><Button onClick={() => { markBalanceAsPaid(balance, method); navigate(`/group/${currentGroup.id}`); }} className="app-button-primary gap-2"><Landmark className="h-4 w-4" />Record payment</Button></div>)}</div> : <div className="app-surface flex flex-col items-center py-14 text-center"><CheckCircle2 className="h-9 w-9 balance-positive" /><h2 className="mt-4 text-xl font-semibold">Everyone is settled up</h2><p className="mt-2 text-muted-foreground">There are no outstanding payments in this group.</p></div>}</section></div></Layout>;
+}

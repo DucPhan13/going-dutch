@@ -1,0 +1,56 @@
+/* Hallmark · pre-emit critique: P5 H4 E4 S5 R4 V4 */
+/* Hallmark · genre: modern-minimal · tone: calm, trustworthy money workspace · anchor hue: chromatic-green
+ * macrostructure: Workbench · design-system: design.md · designed-as-app
+ * contrast: pass (40–41) · honest: pass (46) · chrome: pass (47) · tokens: pass (48) · mobile: pass (34, 49, 50–57)
+ */
+:root {
+  --color-paper: oklch(98% 0.006 235);
+  --color-paper-2: oklch(95% 0.009 235);
+  --color-paper-3: oklch(91% 0.012 235);
+  --color-ink: oklch(20% 0.018 235);
+  --color-ink-2: oklch(42% 0.016 235);
+  --color-muted: oklch(56% 0.016 235);
+  --color-rule: oklch(86% 0.014 235);
+  --color-rule-2: oklch(91% 0.01 235);
+  --color-accent: oklch(72% 0.16 145);
+  --color-accent-strong: oklch(64% 0.16 145);
+  --color-accent-soft: oklch(91% 0.05 145);
+  --color-positive: oklch(72% 0.16 145);
+  --color-negative: oklch(68% 0.16 25);
+  --color-warning: oklch(82% 0.15 85);
+  --color-focus: oklch(76% 0.2 145);
+  --color-on-accent: oklch(19% 0.018 235);
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --space-3xs: 0.25rem; --space-2xs: 0.5rem; --space-xs: 0.75rem;
+  --space-sm: 1rem; --space-md: 1.5rem; --space-lg: 2rem;
+  --space-xl: 3rem; --space-2xl: 4.5rem;
+  --text-xs: 0.75rem; --text-sm: 0.875rem; --text-md: 1rem;
+  --text-lg: 1.25rem; --text-xl: 1.625rem; --text-2xl: 2.125rem;
+  --radius-sm: 0.75rem; --radius-input: 0.875rem; --radius-card: 1rem; --radius-pill: 999px;
+  --rule: 1px;
+  --dur-short: 160ms; --dur-medium: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+.dark {
+  --color-paper: oklch(12% 0.018 235);
+  --color-paper-2: oklch(17% 0.022 235);
+  --color-paper-3: oklch(22% 0.022 235);
+  --color-ink: oklch(96% 0.01 235);
+  --color-ink-2: oklch(70% 0.016 235);
+  --color-muted: oklch(54% 0.017 235);
+  --color-rule: oklch(28% 0.022 235);
+  --color-rule-2: oklch(23% 0.02 235);
+  --color-accent: oklch(74% 0.16 145);
+  --color-accent-strong: oklch(67% 0.16 145);
+  --color-accent-soft: oklch(25% 0.05 145);
+  --color-positive: oklch(74% 0.16 145);
+  --color-negative: oklch(70% 0.16 25);
+  --color-warning: oklch(82% 0.15 85);
+  --color-focus: oklch(78% 0.2 145);
+  --color-on-accent: oklch(15% 0.018 235);
+}
