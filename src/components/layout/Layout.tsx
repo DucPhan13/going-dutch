@@ -1,7 +1,7 @@
 import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import Header from './Header';
-import { CircleDollarSign, House, Plus, Users } from 'lucide-react';
+import { CircleDollarSign, House, Users } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -11,7 +11,6 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, title, showBack, backTo }: LayoutProps) {
-  const navigate = useNavigate();
   const navItems = [
     { to: '/', label: 'Home', icon: House },
     { to: '/friends', label: 'Friends', icon: Users },
@@ -25,15 +24,7 @@ export default function Layout({ children, title, showBack, backTo }: LayoutProp
       </main>
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-4 py-2 backdrop-blur sm:hidden" aria-label="Primary navigation">
         <div className="mx-auto flex max-w-md items-center justify-between">
-          {navItems.slice(0, 2).map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => `flex min-w-14 flex-col items-center gap-1 rounded-lg px-3 py-1 text-[11px] font-medium ${isActive ? 'text-primary' : 'text-muted-foreground'}`}>
-              <Icon className="h-5 w-5" />{label}
-            </NavLink>
-          ))}
-          <button onClick={() => navigate('/create-group')} aria-label="Create group" className="-mt-7 grid h-14 w-14 place-items-center rounded-full app-button-primary shadow-lg transition-transform active:scale-95">
-            <Plus className="h-6 w-6" />
-          </button>
-          {navItems.slice(2).map(({ to, label, icon: Icon }) => (
+          {navItems.map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} className={({ isActive }) => `flex min-w-14 flex-col items-center gap-1 rounded-lg px-3 py-1 text-[11px] font-medium ${isActive ? 'text-primary' : 'text-muted-foreground'}`}>
               <Icon className="h-5 w-5" />{label}
             </NavLink>
