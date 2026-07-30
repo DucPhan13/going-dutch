@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { useGroupContext } from '@/contexts/GroupContext';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Moon, Sun } from 'lucide-react';
 
@@ -11,7 +10,6 @@ interface HeaderProps {
 }
 
 export default function Header({ title, showBack = false, backTo = '/' }: HeaderProps) {
-  const { currentGroup } = useGroupContext();
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
   const toggleTheme = () => {
     const next = !isDark;

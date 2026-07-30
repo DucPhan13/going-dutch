@@ -12,13 +12,34 @@ Going Dutch handles that last part. Create a group, add expenses, choose who pai
 
 ## Where does the data go?
 
-Into your browser's `localStorage`.
+Into IndexedDB in your browser as one local-first document per group.
 
 - No account required.
-- No backend storing your expense history.
+- No backend or relay storing your expense history.
 - No collection of group, member, or expense data.
 
 That also means clearing your browser data clears the app's data. The app only knows what your browser keeps.
+
+## Device sync and backup
+
+Open a group and choose **Sync** to transfer that group to another device.
+
+- **Sync nearby** connects two open browsers directly on the same Wi-Fi. Scan the offer QR on the receiving device, then scan or paste its answer code on the sender. It works without internet or an account.
+- **Encrypted cloud transfer** is an optional fallback for a deployed Cloudflare relay. It is manual, temporary, and end-to-end encrypted; Cloudflare receives encrypted frames only.
+- **Encrypted file backup** creates a password-protected `.going-dutch-sync` file for recovery or manual transfer via AirDrop, Nearby Share, Bluetooth, USB, or removable storage.
+
+Matching group histories merge rather than overwrite. None of these modes provides automatic background synchronization.
+
+### Enable Cloudflare fallback
+
+The primary nearby mode needs no deployment beyond the static app. To enable the optional Cloudflare fallback, deploy the separate Worker in `packages/cloud-sync` and configure two values before release:
+
+1. Set `ALLOWED_ORIGINS` in `packages/cloud-sync/wrangler.jsonc` to the exact Cloudflare Pages origin (and any production custom domain).
+2. Set `VITE_CLOUD_SYNC_URL` in the Pages build environment to the deployed Worker origin, such as `https://going-dutch-sync.example.workers.dev`.
+
+Then deploy from the project root with `npx wrangler deploy --config packages/cloud-sync/wrangler.jsonc`. The fallback button remains hidden until the Pages build receives `VITE_CLOUD_SYNC_URL`.
+
+Going Dutch is installable as a PWA. Open it online once so the app shell is cached, then it can launch and operate in airplane mode.
 
 ## What it does
 

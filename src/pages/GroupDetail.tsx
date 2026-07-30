@@ -9,8 +9,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ExpenseCard from '@/components/expenses/ExpenseCard';
 import BalancesList from '@/components/balances/BalancesList';
 import TransactionList from '@/components/balances/TransactionList';
-import Avatar from '@/components/ui/Avatar';
-import { Plus, Edit2, Trash2, UserPlus, ReceiptText, TrendingUp, Users, WalletCards } from 'lucide-react';
+import OfflineSyncDialog from '@/components/sync/OfflineSyncDialog';
+import Avatar from '@/components/ui/avatar';
+import { Plus, Edit2, Trash2, UserPlus, ReceiptText, TrendingUp, Users, WalletCards, HardDrive } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -30,6 +31,7 @@ const GroupDetail = () => {
 
   const [newMemberName, setNewMemberName] = useState('');
   const [activeTab, setActiveTab] = useState('expenses');
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
 
   const [editMemberDialogOpen, setEditMemberDialogOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<{ id: string; name: string } | null>(null);
@@ -112,7 +114,10 @@ const GroupDetail = () => {
     <Layout title={currentGroup.name} showBack>
       <div className="mb-6 flex items-end justify-between gap-4">
         <div><p className="section-label mb-1">Group workspace</p><h2 className="text-2xl font-semibold tracking-tight">{currentGroup.name}</h2></div>
-        <Button onClick={() => navigate(`/group/${currentGroup.id}/settle-up`)} variant="outline" className="shrink-0 gap-2 border-border"><WalletCards className="h-4 w-4" /><span className="hidden sm:inline">Settle up</span></Button>
+        <div className="flex shrink-0 gap-2">
+          <Button onClick={() => setSyncDialogOpen(true)} variant="outline" className="gap-2 border-border"><HardDrive className="h-4 w-4" /><span className="hidden sm:inline">Sync</span></Button>
+          <Button onClick={() => navigate(`/group/${currentGroup.id}/settle-up`)} variant="outline" className="gap-2 border-border"><WalletCards className="h-4 w-4" /><span className="hidden sm:inline">Settle up</span></Button>
+        </div>
       </div>
       {/* Summary Grid */}
       <div className="grid grid-cols-2 gap-3 mb-6">
@@ -348,6 +353,13 @@ const GroupDetail = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <OfflineSyncDialog
+        groupId={currentGroup.id}
+        groupName={currentGroup.name}
+        open={syncDialogOpen}
+        onOpenChange={setSyncDialogOpen}
+      />
     </Layout>
   );
 };

@@ -2,7 +2,7 @@ import { Expense, Member } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Edit2, Trash2, User, Utensils, Home, Car, Plane, Ticket } from 'lucide-react';
-import Avatar from '@/components/ui/Avatar';
+import Avatar from '@/components/ui/avatar';
 
 interface ExpenseCardProps {
   expense: Expense;
