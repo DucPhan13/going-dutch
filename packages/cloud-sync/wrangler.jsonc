@@ -12,7 +12,7 @@
     ]
   },
   "vars": {
-    "ALLOWED_ORIGINS": "https://going-dutch.pages.dev"
+    "ALLOWED_ORIGINS": "https://going-dutch.ducpm1.io.vn,https://going-dutch.pages.dev"
   },
   "migrations": [
     {
