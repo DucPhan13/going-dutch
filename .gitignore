@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local sync diagnostics and Wrangler's local development state
+.going-dutch-lan-host-live/
+.lan-host-*.pid
+.wrangler/
+*.tsbuildinfo

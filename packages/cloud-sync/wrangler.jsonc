@@ -1,0 +1,27 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "going-dutch-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-04-29",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SYNC_ROOMS",
+        "class_name": "GroupSyncRoom"
+      }
+    ]
+  },
+  "vars": {
+    "ALLOWED_ORIGINS": "https://going-dutch.pages.dev"
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["GroupSyncRoom"]
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}

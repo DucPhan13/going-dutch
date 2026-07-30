@@ -3,7 +3,7 @@ import { useGroupContext } from '@/contexts/GroupContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Check, ArrowRight } from 'lucide-react';
-import Avatar from '@/components/ui/Avatar';
+import Avatar from '@/components/ui/avatar';
 
 interface BalancesListProps {
   balances: Balance[];

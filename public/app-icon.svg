@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Going Dutch">
+  <rect width="512" height="512" rx="112" fill="#11181c"/>
+  <circle cx="256" cy="256" r="154" fill="#68d391"/>
+  <path d="M256 150v212M177 203c0-30 27-53 64-53h30c36 0 64 22 64 52 0 32-27 48-79 54-52 6-79 22-79 54 0 30 28 52 65 52h29c37 0 64-23 64-53" fill="none" stroke="#11181c" stroke-width="38" stroke-linecap="round"/>
+</svg>

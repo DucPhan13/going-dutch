@@ -5,7 +5,7 @@ import Layout from '@/components/layout/Layout';
 import { useGroupContext } from '@/contexts/GroupContext';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import Avatar from '@/components/ui/Avatar';
+import Avatar from '@/components/ui/avatar';
 
 export default function SettleUp() {
   const { id } = useParams<{id:string}>(); const navigate = useNavigate(); const { selectGroup, currentGroup, calculateBalances, markBalanceAsPaid } = useGroupContext(); const [method, setMethod] = useState('Bank transfer');

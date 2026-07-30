@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Group } from '@/types';
 import { useNavigate } from 'react-router-dom';
-import Avatar from '@/components/ui/Avatar';
+import Avatar from '@/components/ui/avatar';
 import { ArrowUpRight, ReceiptText, Users } from 'lucide-react';
 
 interface GroupCardProps {

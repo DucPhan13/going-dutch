@@ -2,7 +2,7 @@ import { useGroupContext } from '@/contexts/GroupContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Trash2, ArrowDownUp } from 'lucide-react';
-import Avatar from '@/components/ui/Avatar';
+import Avatar from '@/components/ui/avatar';
 
 const TransactionList = () => {
   const { currentGroup, clearTransactions } = useGroupContext();

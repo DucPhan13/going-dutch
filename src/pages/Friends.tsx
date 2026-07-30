@@ -6,7 +6,7 @@ import { useGroupContext } from '@/contexts/GroupContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import Avatar from '@/components/ui/Avatar';
+import Avatar from '@/components/ui/avatar';
 
 export default function Friends() {
   const navigate = useNavigate(); const { groups, addMemberToGroup } = useGroupContext(); const [name, setName] = useState(''); const [groupId, setGroupId] = useState(groups[0]?.id || '');

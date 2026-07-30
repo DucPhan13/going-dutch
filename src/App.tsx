@@ -13,6 +13,7 @@ import Friends from "@/pages/Friends";
 import Activity from "@/pages/Activity";
 import SettleUp from "@/pages/SettleUp";
 import NotFound from "@/pages/NotFound";
+import { IncomingCloudTransferDialog, IncomingNearbySyncDialog } from "@/components/sync/NearbySyncPanel";
 
 const queryClient = new QueryClient();
 
@@ -22,7 +23,9 @@ const App = () => (
       <GroupProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <IncomingNearbySyncDialog />
+          <IncomingCloudTransferDialog />
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/create-group" element={<CreateGroup />} />
