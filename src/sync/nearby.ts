@@ -1,5 +1,4 @@
 import type { Group } from "@/types";
-import { gunzipSync, gzipSync } from "fflate";
 import type { GroupSyncRepository } from "./repository";
 
 const PROTOCOL_VERSION = 1;
@@ -8,10 +7,10 @@ const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 const MAX_RECONNECT_ROUNDS = 2;
 const CONNECT_TIMEOUT_MS = 20_000;
 const TRANSFER_TIMEOUT_MS = 90_000;
-const ANSWER_CODE_TTL_MS = 60_000;
-const ANSWER_RELAY_URL = import.meta.env.VITE_CLOUD_SYNC_URL?.replace(/\/$/, "");
+const PAIRING_TIMEOUT_MS = 60_000;
+const SIGNAL_ENDPOINT = import.meta.env.VITE_CLOUD_SYNC_URL?.replace(/\/$/, "");
 
-export type NearbySyncStatus = "idle" | "preparing" | "awaiting-answer" | "awaiting-offer" | "connecting" | "transferring" | "merging" | "complete" | "failed";
+export type NearbySyncStatus = "idle" | "preparing" | "awaiting-peer" | "awaiting-offer" | "connecting" | "transferring" | "merging" | "complete" | "failed";
 
 export interface NearbySyncState {
   status: NearbySyncStatus;
@@ -19,20 +18,13 @@ export interface NearbySyncState {
   groupId?: string;
 }
 
-interface PairingEnvelope {
-  version: 1;
-  kind: "offer" | "answer";
-  sessionId: string;
-  groupId: string;
-  description: RTCSessionDescriptionInit;
-  answerRelay?: AnswerRelay;
-}
-
-interface AnswerRelay {
-  endpoint: string;
-  roomId: string;
-  credential: string;
-  key: string;
+interface NearbySession { code: string; credential: string; expiresAt: string }
+interface SignalPayload {
+  kind: "description" | "candidate";
+  description?: RTCSessionDescriptionInit;
+  candidate?: RTCIceCandidateInit;
+  groupId?: string;
+  sessionId?: string;
 }
 
 interface HelloPacket {
@@ -101,121 +93,64 @@ function base64ToBytes(value: string) {
   return Uint8Array.from(atob(value), character => character.charCodeAt(0));
 }
 
-function toArrayBuffer(bytes: Uint8Array) {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-}
-
-function isAnswerRelay(value: unknown): value is AnswerRelay {
-  if (!value || typeof value !== "object") return false;
-  const relay = value as Record<string, unknown>;
-  if (typeof relay.endpoint !== "string" || relay.endpoint.length > 512 || typeof relay.roomId !== "string" || typeof relay.credential !== "string" || typeof relay.key !== "string") return false;
-  try { new URL(relay.endpoint); } catch { return false; }
-  return /^[A-Za-z0-9_-]{24,128}$/.test(relay.roomId)
-    && /^[A-Za-z0-9_-]{32,128}$/.test(relay.credential)
-    && /^[A-Za-z0-9_-]{43}$/.test(relay.key);
-}
-
-function isPairingEnvelope(value: unknown): value is PairingEnvelope {
-  if (!value || typeof value !== "object") return false;
-  const data = value as Record<string, unknown>;
-  return data.version === PROTOCOL_VERSION
-    && (data.kind === "offer" || data.kind === "answer")
-    && typeof data.sessionId === "string"
-    && /^[A-Za-z0-9_-]{20,80}$/.test(data.sessionId)
-    && typeof data.groupId === "string"
-    && data.description !== null
-    && typeof data.description === "object"
-    && (data.answerRelay === undefined || isAnswerRelay(data.answerRelay));
-}
-
-async function encodePairingEnvelope(value: PairingEnvelope) {
-  const plain = encoder.encode(JSON.stringify(value));
-  // CompressionStream can stall in embedded browsers. fflate is bundled, runs
-  // synchronously, and keeps the SDP-rich WebRTC offer small enough to scan.
-  return `g.${bytesToBase64Url(gzipSync(plain, { level: 6 }))}`;
-}
-
-async function decodePairingEnvelope(code: string) {
-  const [mode, encoded] = code.trim().split(".", 2);
-  if (!encoded || (mode !== "r" && mode !== "g")) throw new Error("This pairing code is invalid.");
-  let payload = base64UrlToBytes(encoded);
-  if (mode === "g") {
-    try { payload = gunzipSync(payload); }
-    catch { throw new Error("This pairing code could not be decompressed."); }
-  }
-  if (payload.byteLength > 16 * 1024) throw new Error("This pairing code is too large.");
-  let parsed: unknown;
-  try { parsed = JSON.parse(decoder.decode(payload)); } catch { throw new Error("This pairing code could not be read."); }
-  if (!isPairingEnvelope(parsed)) throw new Error("This pairing code is not supported.");
-  return parsed;
-}
-
-function sixDigitCode() {
-  const upperBound = Math.floor(0x1_0000_0000 / 1_000_000) * 1_000_000;
-  while (true) {
-    const value = crypto.getRandomValues(new Uint32Array(1))[0];
-    if (value < upperBound) return String(value % 1_000_000).padStart(6, "0");
-  }
-}
-
-async function answerRelayKey(relay: AnswerRelay, usage: KeyUsage[]) {
-  const raw = base64UrlToBytes(relay.key);
-  if (raw.byteLength !== 32) throw new Error("This nearby pairing link has an invalid answer key.");
-  return crypto.subtle.importKey("raw", toArrayBuffer(raw), "AES-GCM", false, usage);
-}
-
-async function encryptRelayAnswer(relay: AnswerRelay, answer: string) {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await answerRelayKey(relay, ["encrypt"]), toArrayBuffer(encoder.encode(answer))));
-  const payload = new Uint8Array(iv.byteLength + ciphertext.byteLength);
-  payload.set(iv);
-  payload.set(ciphertext, iv.byteLength);
-  return bytesToBase64Url(payload);
-}
-
-async function decryptRelayAnswer(relay: AnswerRelay, payload: string) {
-  let encrypted: Uint8Array;
-  try { encrypted = base64UrlToBytes(payload); } catch { throw new Error("The nearby answer could not be read."); }
-  if (encrypted.byteLength < 29 || encrypted.byteLength > 80 * 1024) throw new Error("The nearby answer is invalid.");
-  try {
-    const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: encrypted.subarray(0, 12) }, await answerRelayKey(relay, ["decrypt"]), toArrayBuffer(encrypted.subarray(12)));
-    return decoder.decode(plaintext);
-  } catch { throw new Error("The nearby answer could not be decrypted."); }
-}
-
-async function createAnswerRelay(): Promise<AnswerRelay | undefined> {
-  if (!ANSWER_RELAY_URL) return undefined;
+async function createNearbySession(): Promise<NearbySession> {
+  if (!SIGNAL_ENDPOINT) throw new Error("Nearby code pairing is not configured for this app.");
   let response: Response;
-  try { response = await fetch(`${ANSWER_RELAY_URL}/v1/nearby`, { method: "POST" }); }
-  catch { throw new Error("The temporary answer-code service is unavailable. Check your connection and try again."); }
-  let body: unknown;
-  try { body = await response.json(); } catch { body = undefined; }
-  const data = body as Record<string, unknown> | undefined;
-  if (!response.ok || !data || typeof data.roomId !== "string" || typeof data.credential !== "string") {
-    throw new Error("The temporary answer-code service could not create a pairing session.");
+  try { response = await fetch(`${SIGNAL_ENDPOINT}/v1/nearby/sessions`, { method: "POST" }); }
+  catch { throw new Error("The nearby pairing service is unavailable. Check your connection and try again."); }
+  const data = await response.json().catch(() => undefined) as Record<string, unknown> | undefined;
+  if (!response.ok || !data || typeof data.code !== "string" || typeof data.credential !== "string" || typeof data.expiresAt !== "string") throw new Error("The nearby pairing service could not create a session.");
+  return { code: data.code, credential: data.credential, expiresAt: data.expiresAt };
+}
+
+class NearbySignalClient {
+  private socket: WebSocket | null = null;
+  private closed = false;
+
+  constructor(private readonly session: NearbySession, private readonly role: "host" | "guest", private readonly handlers: {
+    onPeerReady: () => void;
+    onPeerLeft: () => void;
+    onSignal: (signal: SignalPayload) => void;
+    onFailure: (message: string) => void;
+  }) {}
+
+  async connect() {
+    if (!SIGNAL_ENDPOINT) throw new Error("Nearby code pairing is not configured for this app.");
+    const endpoint = new URL(`${SIGNAL_ENDPOINT}/v1/nearby/${this.session.code}/signal`);
+    endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
+    await new Promise<void>((resolve, reject) => {
+      const socket = new WebSocket(endpoint);
+      this.socket = socket;
+      const timer = window.setTimeout(() => reject(new Error("Nearby pairing timed out. Create a new six-digit code and try again.")), CONNECT_TIMEOUT_MS);
+      socket.addEventListener("open", () => socket.send(JSON.stringify({ type: "nearby-join", role: this.role, credential: this.role === "host" ? this.session.credential : undefined })), { once: true });
+      socket.addEventListener("message", event => {
+        let message: Record<string, unknown>;
+        try { message = JSON.parse(typeof event.data === "string" ? event.data : decoder.decode(event.data)) as Record<string, unknown>; } catch { return; }
+        if (message.type === "nearby-joined") { window.clearTimeout(timer); resolve(); return; }
+        if (message.type === "nearby-peer-ready") return this.handlers.onPeerReady();
+        if (message.type === "nearby-peer-left") return this.handlers.onPeerLeft();
+        if (message.type === "nearby-signal" && message.signal && typeof message.signal === "object") return this.handlers.onSignal(message.signal as SignalPayload);
+        if (message.type === "nearby-error") {
+          const detail = typeof message.message === "string" ? message.message : "Nearby pairing failed.";
+          window.clearTimeout(timer);
+          reject(new Error(detail));
+          this.handlers.onFailure(detail);
+        }
+      });
+      socket.addEventListener("error", () => { window.clearTimeout(timer); reject(new Error("The nearby pairing connection could not be opened.")); }, { once: true });
+      socket.addEventListener("close", () => { window.clearTimeout(timer); if (!this.closed) this.handlers.onPeerLeft(); }, { once: true });
+    });
   }
-  return { endpoint: ANSWER_RELAY_URL, roomId: data.roomId, credential: data.credential, key: bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32))) };
-}
 
-async function publishRelayAnswer(relay: AnswerRelay, code: string, answer: string) {
-  const response = await fetch(`${relay.endpoint}/v1/nearby/${relay.roomId}/${code}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${relay.credential}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ answer: await encryptRelayAnswer(relay, answer) }),
-  });
-  if (!response.ok) throw new Error("The temporary answer code could not be published. Try pairing again.");
-}
+  sendSignal(signal: SignalPayload) {
+    if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: "nearby-signal", signal }));
+  }
 
-async function readRelayAnswer(relay: AnswerRelay, code: string) {
-  let response: Response;
-  try { response = await fetch(`${relay.endpoint}/v1/nearby/${relay.roomId}/${code}`, { headers: { Authorization: `Bearer ${relay.credential}` } }); }
-  catch { throw new Error("The temporary answer-code service is unavailable. Check your connection and try again."); }
-  if (response.status === 404 || response.status === 410) throw new Error("That six-digit answer code has expired or was already used. Pair again.");
-  let body: unknown;
-  try { body = await response.json(); } catch { body = undefined; }
-  const answer = (body as Record<string, unknown> | undefined)?.answer;
-  if (!response.ok || typeof answer !== "string") throw new Error("The temporary answer code could not be read. Try pairing again.");
-  return decryptRelayAnswer(relay, answer);
+  close() {
+    this.closed = true;
+    this.socket?.close();
+    this.socket = null;
+  }
 }
 
 async function sha256(bytes: Uint8Array) {
@@ -227,20 +162,6 @@ function sameHeads(left: string[], right: string[]) {
   return left.length === right.length && left.every((head, index) => head === right[index]);
 }
 
-async function waitForIceGathering(connection: RTCPeerConnection) {
-  if (connection.iceGatheringState === "complete") return;
-  await new Promise<void>((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error("Nearby connection setup timed out.")), CONNECT_TIMEOUT_MS);
-    const onStateChange = () => {
-      if (connection.iceGatheringState !== "complete") return;
-      window.clearTimeout(timer);
-      connection.removeEventListener("icegatheringstatechange", onStateChange);
-      resolve();
-    };
-    connection.addEventListener("icegatheringstatechange", onStateChange);
-  });
-}
-
 export class NearbySyncSession {
   private connection: RTCPeerConnection | null = null;
   private channel: RTCDataChannel | null = null;
@@ -249,7 +170,9 @@ export class NearbySyncSession {
   private incoming: IncomingSnapshot | null = null;
   private localHeads: string[] = [];
   private peerHeads: string[] | null = null;
-  private answerRelay: AnswerRelay | undefined;
+  private signal: NearbySignalClient | null = null;
+  private pendingCandidates: RTCIceCandidateInit[] = [];
+  private remoteDescriptionSet = false;
   private receivedSnapshot = false;
   private sentSnapshot = false;
   private resyncRounds = 0;
@@ -265,57 +188,22 @@ export class NearbySyncSession {
     this.groupId = groupId;
     this.sessionId = crypto.randomUUID().replace(/-/g, "");
     this.localHeads = snapshot.heads;
-    this.callbacks.onState({ status: "preparing", detail: "Preparing a nearby connection…", groupId });
-    this.answerRelay = await createAnswerRelay();
-    const connection = this.createConnection();
-    const channel = connection.createDataChannel("going-dutch-sync", { ordered: true });
-    this.attachChannel(channel);
-    const offer = await connection.createOffer();
-    await connection.setLocalDescription(offer);
-    await waitForIceGathering(connection);
-    this.callbacks.onState({ status: "awaiting-answer", detail: this.answerRelay ? "Scan this code on the other device, then enter its six-digit answer within 60 seconds." : "Scan this code on the other device, then scan its answer.", groupId });
-    return encodePairingEnvelope({ version: 1, kind: "offer", sessionId: this.sessionId, groupId, description: connection.localDescription!.toJSON(), answerRelay: this.answerRelay });
+    this.callbacks.onState({ status: "preparing", detail: "Creating a six-digit nearby pairing code…", groupId });
+    const session = await createNearbySession();
+    this.signal = this.createSignal(session, "host");
+    await this.signal.connect();
+    this.callbacks.onState({ status: "awaiting-peer", detail: "Show this code to the other device. It expires in 60 seconds.", groupId });
+    return session.code;
   }
 
   async acceptOffer(code: string) {
     this.reset();
-    const offer = await decodePairingEnvelope(code);
-    if (offer.kind !== "offer") throw new Error("Scan an offer code to receive a nearby sync.");
-    this.groupId = offer.groupId;
-    this.sessionId = offer.sessionId;
-    const local = this.repository.getDocumentSnapshot(this.groupId);
-    this.localHeads = local?.heads || [];
-    this.callbacks.onState({ status: "preparing", detail: "Preparing your response code…", groupId: this.groupId });
-    const connection = this.createConnection();
-    connection.addEventListener("datachannel", event => this.attachChannel(event.channel), { once: true });
-    await connection.setRemoteDescription(offer.description);
-    const answer = await connection.createAnswer();
-    await connection.setLocalDescription(answer);
-    await waitForIceGathering(connection);
-    const response = await encodePairingEnvelope({ version: 1, kind: "answer", sessionId: this.sessionId, groupId: this.groupId, description: connection.localDescription!.toJSON() });
-    if (!offer.answerRelay) {
-      this.callbacks.onState({ status: "connecting", detail: "Show this answer code to the first device.", groupId: this.groupId });
-      return response;
-    }
-    const answerCode = sixDigitCode();
-    await publishRelayAnswer(offer.answerRelay, answerCode, response);
-    this.callbacks.onState({ status: "connecting", detail: `Show the six-digit answer within ${ANSWER_CODE_TTL_MS / 1000} seconds.`, groupId: this.groupId });
-    return answerCode;
-  }
-
-  async acceptAnswer(code: string) {
     const value = code.trim();
-    let answerValue = value;
-    if (/^\d{6}$/.test(value)) {
-      if (!this.answerRelay) throw new Error("This pairing session does not use a six-digit answer code.");
-      answerValue = await readRelayAnswer(this.answerRelay, value);
-    }
-    const answer = await decodePairingEnvelope(answerValue);
-    if (answer.kind !== "answer" || answer.sessionId !== this.sessionId || answer.groupId !== this.groupId || !this.connection) {
-      throw new Error("This answer belongs to a different nearby sync session.");
-    }
-    await this.connection.setRemoteDescription(answer.description);
-    this.callbacks.onState({ status: "connecting", detail: "Connecting directly to the other device…", groupId: this.groupId });
+    if (!/^\d{6}$/.test(value)) throw new Error("Enter the six-digit nearby pairing code.");
+    this.callbacks.onState({ status: "preparing", detail: "Joining the nearby pairing session…" });
+    this.signal = this.createSignal({ code: value, credential: "", expiresAt: "" }, "guest");
+    await this.signal.connect();
+    this.callbacks.onState({ status: "awaiting-offer", detail: "Connected to the pairing room. Waiting for the other device…" });
   }
 
   cancel = () => this.reset();
@@ -330,7 +218,76 @@ export class NearbySyncSession {
         if (this.connection === connection && connection.connectionState === "disconnected") this.fail("Nearby connection was interrupted.");
       }, 10_000);
     });
+    connection.addEventListener("icecandidate", event => {
+      if (event.candidate) this.signal?.sendSignal({ kind: "candidate", candidate: event.candidate.toJSON() });
+    });
     return connection;
+  }
+
+  private createSignal(session: NearbySession, role: "host" | "guest") {
+    return new NearbySignalClient(session, role, {
+      onPeerReady: () => {
+        if (role === "host") void this.beginHostConnection();
+      },
+      onPeerLeft: () => {
+        if (!this.stopped && !this.channel && this.connection?.connectionState !== "connected") this.fail("The other device left the nearby pairing room.");
+      },
+      onSignal: signal => { void this.receiveSignal(signal); },
+      onFailure: message => { if (!this.stopped) this.fail(message); },
+    });
+  }
+
+  private async beginHostConnection() {
+    if (this.connection) return;
+    try {
+      this.callbacks.onState({ status: "connecting", detail: "Connecting directly to the other device…", groupId: this.groupId });
+      const connection = this.createConnection();
+      this.attachChannel(connection.createDataChannel("going-dutch-sync", { ordered: true }));
+      const offer = await connection.createOffer();
+      await connection.setLocalDescription(offer);
+      this.signal?.sendSignal({ kind: "description", description: connection.localDescription!.toJSON(), groupId: this.groupId, sessionId: this.sessionId });
+    } catch (error) {
+      this.fail(error instanceof Error ? error.message : "Could not start the nearby connection.");
+    }
+  }
+
+  private async receiveSignal(signal: SignalPayload) {
+    try {
+      if (signal.kind === "candidate" && signal.candidate) {
+        if (!this.connection || !this.remoteDescriptionSet) this.pendingCandidates.push(signal.candidate);
+        else await this.connection.addIceCandidate(signal.candidate);
+        return;
+      }
+      if (signal.kind !== "description" || !signal.description || (signal.description.type !== "offer" && signal.description.type !== "answer")) return;
+      if (signal.description.type === "offer") {
+        if (!signal.groupId || !signal.sessionId || this.connection) return this.fail("The nearby pairing signal is invalid.");
+        this.groupId = signal.groupId;
+        this.sessionId = signal.sessionId;
+        this.localHeads = this.repository.getDocumentSnapshot(this.groupId)?.heads || [];
+        const connection = this.createConnection();
+        connection.addEventListener("datachannel", event => this.attachChannel(event.channel), { once: true });
+        await connection.setRemoteDescription(signal.description);
+        this.remoteDescriptionSet = true;
+        await this.flushCandidates();
+        const answer = await connection.createAnswer();
+        await connection.setLocalDescription(answer);
+        this.signal?.sendSignal({ kind: "description", description: connection.localDescription!.toJSON(), groupId: this.groupId, sessionId: this.sessionId });
+        this.callbacks.onState({ status: "connecting", detail: "Connecting directly to the other device…", groupId: this.groupId });
+        return;
+      }
+      if (!this.connection || signal.groupId !== this.groupId || signal.sessionId !== this.sessionId) return this.fail("This nearby answer belongs to a different session.");
+      await this.connection.setRemoteDescription(signal.description);
+      this.remoteDescriptionSet = true;
+      await this.flushCandidates();
+    } catch (error) {
+      this.fail(error instanceof Error ? error.message : "The nearby pairing signal could not be processed.");
+    }
+  }
+
+  private async flushCandidates() {
+    const candidates = this.pendingCandidates;
+    this.pendingCandidates = [];
+    for (const candidate of candidates) await this.connection?.addIceCandidate(candidate);
   }
 
   private attachChannel(channel: RTCDataChannel) {
@@ -468,12 +425,15 @@ export class NearbySyncSession {
     this.connection?.close();
     this.channel = null;
     this.connection = null;
+    this.signal?.close();
+    this.signal = null;
     this.incoming = null;
     this.peerHeads = null;
+    this.pendingCandidates = [];
+    this.remoteDescriptionSet = false;
     this.receivedSnapshot = false;
     this.sentSnapshot = false;
     this.resyncRounds = 0;
-    this.answerRelay = undefined;
     if (emitIdle) this.callbacks.onState({ status: "idle", detail: "Ready to sync a nearby device." });
     this.stopped = false;
   }
@@ -483,10 +443,11 @@ export async function readNearbyPairingFragment() {
   const value = new URLSearchParams(window.location.hash.slice(1)).get("nearby");
   if (!value) return undefined;
   window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
-  await decodePairingEnvelope(value);
-  return value;
+  const code = value.trim();
+  if (!/^\d{6}$/.test(code)) throw new Error("This nearby pairing link is invalid.");
+  return code;
 }
 
 export function nearbyPairingUrl(code: string) {
-  return `${window.location.origin}${window.location.pathname}#nearby=${encodeURIComponent(code)}`;
+  return `${window.location.origin}/#nearby=${encodeURIComponent(code)}`;
 }
