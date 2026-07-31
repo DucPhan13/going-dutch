@@ -1,13 +1,18 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGroupContext } from '@/contexts/GroupContext';
 import Layout from '@/components/layout/Layout';
 import GroupCard from '@/components/groups/GroupCard';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, CircleDollarSign, Plus, ReceiptText, Users } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { ArrowRight, CircleDollarSign, Plus, ReceiptText, Users, Wifi } from 'lucide-react';
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { groups } = useGroupContext();
+  const { beginNearbyJoin, groups } = useGroupContext();
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [nearbyCode, setNearbyCode] = useState('');
 
   const totalExpenses = groups.reduce((sum, g) => sum + g.expenses.length, 0);
   const totalMembers = groups.reduce((sum, g) => sum + g.members.length, 0);
@@ -21,8 +26,10 @@ const Dashboard = () => {
     <Layout title="Going Dutch">
       <section className="mb-8 flex items-end justify-between gap-4">
         <div><p className="section-label mb-2">Shared spending, clearly</p><h2 className="text-3xl font-semibold tracking-tight text-foreground">Your groups</h2></div>
-        <Button onClick={() => navigate('/create-group')} className="app-button-primary shrink-0 gap-2"><Plus className="h-4 w-4" /><span className="hidden sm:inline">New group</span></Button>
+        <div className="flex shrink-0 gap-2"><Button variant="outline" onClick={() => setJoinOpen(true)} className="gap-2"><Wifi className="h-4 w-4" /><span className="hidden sm:inline">Join sync</span></Button><Button onClick={() => navigate('/create-group')} className="app-button-primary gap-2"><Plus className="h-4 w-4" /><span className="hidden sm:inline">New group</span></Button></div>
       </section>
+
+      <Dialog open={joinOpen} onOpenChange={setJoinOpen}><DialogContent><DialogHeader><DialogTitle>Join nearby sync</DialogTitle><DialogDescription>Enter the six-digit code shown on the other device. The code expires after 60 seconds.</DialogDescription></DialogHeader><form onSubmit={event => { event.preventDefault(); if (/^\d{6}$/.test(nearbyCode)) { beginNearbyJoin(nearbyCode); setJoinOpen(false); setNearbyCode(''); } }} className="space-y-4"><Input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={nearbyCode} onChange={event => setNearbyCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" className="text-center font-mono text-xl tracking-[0.35em]" /><DialogFooter><Button type="submit" disabled={!/^\d{6}$/.test(nearbyCode)} className="app-button-primary">Join sync</Button></DialogFooter></form></DialogContent></Dialog>
 
       {groups.length > 0 && <section className="app-surface-strong mb-8 grid gap-5 p-5 sm:grid-cols-[1fr_auto] sm:p-6">
         <div><p className="section-label mb-2">Total shared spending</p><p className="amount text-3xl font-semibold text-foreground sm:text-4xl">{totalSpent.toLocaleString('vi-VN')} <span className="text-lg text-muted-foreground">đ</span></p><p className="mt-2 text-sm text-muted-foreground">Across {groups.length} groups and {totalExpenses} expenses.</p></div>

@@ -32,8 +32,8 @@ interface GroupContextType {
   exportGroupArchive: (groupId: string, passphrase: string) => Promise<ExportGroupArchiveResult>;
   importGroupArchive: (file: Blob, passphrase: string) => Promise<ImportGroupArchiveResult>;
   createNearbyOffer: (groupId: string) => Promise<string>;
-  acceptNearbyOffer: (code: string) => Promise<string>;
-  acceptNearbyAnswer: (code: string) => Promise<void>;
+  acceptNearbyOffer: (code: string) => Promise<void>;
+  beginNearbyJoin: (code: string) => void;
   cancelNearbySync: () => void;
   clearPendingNearbyOffer: () => void;
   createCloudTransfer: (groupId: string) => Promise<string>;
@@ -237,7 +237,10 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [refreshGroups]);
   const createNearbyOffer = useCallback((groupId: string) => nearbyClient.current?.createOffer(groupId) ?? Promise.reject(new Error("Nearby sync is still loading.")), []);
   const acceptNearbyOffer = useCallback((code: string) => nearbyClient.current?.acceptOffer(code) ?? Promise.reject(new Error("Nearby sync is still loading.")), []);
-  const acceptNearbyAnswer = useCallback((code: string) => nearbyClient.current?.acceptAnswer(code) ?? Promise.reject(new Error("Nearby sync is still loading.")), []);
+  const beginNearbyJoin = useCallback((code: string) => {
+    const value = code.replace(/\D/g, "").slice(0, 6);
+    if (/^\d{6}$/.test(value)) setPendingNearbyOffer(value);
+  }, []);
   const cancelNearbySync = useCallback(() => nearbyClient.current?.cancel(), []);
   const clearPendingNearbyOffer = useCallback(() => setPendingNearbyOffer(undefined), []);
   const createCloudTransfer = useCallback((groupId: string) => cloudClient.current?.create(groupId) ?? Promise.reject(new Error("Cloud transfer is still loading.")), []);
@@ -269,7 +272,7 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   }
 
-  return <GroupContext.Provider value={{ groups, currentGroup, isLoading, syncError, nearbySync, pendingNearbyOffer, cloudSync, cloudTransferAvailable: Boolean(import.meta.env.VITE_CLOUD_SYNC_URL), pendingCloudPair, createGroup, selectGroup, addMember, addMemberToGroup, editMember, removeMember, addExpense, editExpense, removeExpense, calculateBalances, markBalanceAsPaid, clearTransactions, exportGroupArchive, importGroupArchive, createNearbyOffer, acceptNearbyOffer, acceptNearbyAnswer, cancelNearbySync, clearPendingNearbyOffer, createCloudTransfer, joinCloudTransfer, cancelCloudTransfer, clearPendingCloudPair }}>{children}</GroupContext.Provider>;
+  return <GroupContext.Provider value={{ groups, currentGroup, isLoading, syncError, nearbySync, pendingNearbyOffer, cloudSync, cloudTransferAvailable: Boolean(import.meta.env.VITE_CLOUD_SYNC_URL), pendingCloudPair, createGroup, selectGroup, addMember, addMemberToGroup, editMember, removeMember, addExpense, editExpense, removeExpense, calculateBalances, markBalanceAsPaid, clearTransactions, exportGroupArchive, importGroupArchive, createNearbyOffer, acceptNearbyOffer, beginNearbyJoin, cancelNearbySync, clearPendingNearbyOffer, createCloudTransfer, joinCloudTransfer, cancelCloudTransfer, clearPendingCloudPair }}>{children}</GroupContext.Provider>;
 };
 
 export const useGroupContext = () => {

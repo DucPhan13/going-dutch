@@ -1,13 +1,12 @@
 import { DurableObject } from "cloudflare:workers";
 
 const PAIRING_TTL_MS = 5 * 60 * 1000;
-const NEARBY_RELAY_TTL_MS = 5 * 60 * 1000;
-const NEARBY_ANSWER_TTL_MS = 60 * 1000;
+const NEARBY_SESSION_TTL_MS = 60 * 1000;
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_DEVICE_ID_LENGTH = 120;
 const MAX_DEVICE_NAME_LENGTH = 80;
 const MAX_FRAME_LENGTH = 256 * 1024;
-const MAX_NEARBY_ANSWER_LENGTH = 80 * 1024;
+const MAX_NEARBY_SIGNAL_LENGTH = 32 * 1024;
 
 interface DeviceRecord {
   deviceId: string;
@@ -16,8 +15,8 @@ interface DeviceRecord {
 }
 
 interface PairingRecord { expiresAt: number }
-interface NearbyAnswerRecord { answer: string; expiresAt: number }
-interface SocketAttachment { authorized: boolean; deviceId?: string }
+interface NearbySessionRecord { expiresAt: number }
+interface SocketAttachment { authorized: boolean; deviceId?: string; nearbyRole?: "host" | "guest" }
 
 function json(body: unknown, init: ResponseInit = {}) {
   const headers = new Headers(init.headers);
@@ -31,6 +30,14 @@ function token(byteLength = 24) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function sixDigitCode() {
+  const upperBound = Math.floor(0x1_0000_0000 / 1_000_000) * 1_000_000;
+  while (true) {
+    const value = crypto.getRandomValues(new Uint32Array(1))[0];
+    if (value < upperBound) return String(value % 1_000_000).padStart(6, "0");
+  }
 }
 
 async function hash(value: string) {
@@ -75,23 +82,24 @@ export default {
       const body = await response.json<Record<string, unknown>>();
       return json({ ...body, roomId: response.ok ? id : undefined }, { status: response.status, headers: corsHeaders });
     }
-    if (request.method === "POST" && url.pathname === "/v1/nearby") {
-      const id = token(24);
-      const headers = new Headers(request.headers);
-      headers.set("X-Going-Dutch-Action", "nearby-create");
-      const response = await env.SYNC_ROOMS.getByName(id).fetch(new Request(request, { headers }));
-      const body = await response.json<Record<string, unknown>>();
-      return json({ ...body, roomId: response.ok ? id : undefined }, { status: response.status, headers: corsHeaders });
+    if (request.method === "POST" && url.pathname === "/v1/nearby/sessions") {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const code = sixDigitCode();
+        const headers = new Headers(request.headers);
+        headers.set("X-Going-Dutch-Action", "nearby-create-session");
+        const response = await env.SYNC_ROOMS.getByName(`nearby:${code}`).fetch(new Request(request, { headers }));
+        if (response.status === 409) continue;
+        const body = await response.json<Record<string, unknown>>();
+        return json({ ...body, code: response.ok ? code : undefined }, { status: response.status, headers: corsHeaders });
+      }
+      return json({ error: "code-unavailable" }, { status: 503, headers: corsHeaders });
     }
-    const nearby = url.pathname.match(/^\/v1\/nearby\/([A-Za-z0-9_-]{24,128})\/(\d{6})$/);
-    if (nearby && (request.method === "POST" || request.method === "GET")) {
+    const nearbySignal = url.pathname.match(/^\/v1\/nearby\/(\d{6})\/signal$/);
+    if (nearbySignal && request.method === "GET") {
+      if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("Expected Upgrade: websocket", { status: 426, headers: corsHeaders });
       const headers = new Headers(request.headers);
-      headers.set("X-Going-Dutch-Action", request.method === "POST" ? "nearby-write" : "nearby-read");
-      headers.set("X-Going-Dutch-Answer-Code", nearby[2]);
-      const response = await env.SYNC_ROOMS.getByName(nearby[1]).fetch(new Request(request, { headers }));
-      const responseHeaders = new Headers(response.headers);
-      for (const [key, value] of Object.entries(corsHeaders)) responseHeaders.set(key, value);
-      return new Response(response.body, { status: response.status, headers: responseHeaders });
+      headers.set("X-Going-Dutch-Action", "nearby-signal");
+      return env.SYNC_ROOMS.getByName(`nearby:${nearbySignal[1]}`).fetch(new Request(request, { headers }));
     }
     const match = url.pathname.match(/^\/v1\/rooms\/([A-Za-z0-9_-]{24,128})\/(pair|sync)$/);
     if (!match || !roomId(match[1])) return json({ error: "not-found" }, { status: 404, headers: corsHeaders });
@@ -117,9 +125,8 @@ export class GroupSyncRoom extends DurableObject<Env> {
     const action = request.headers.get("X-Going-Dutch-Action");
     if (action === "bootstrap") return this.bootstrap(request);
     if (action === "pair") return this.createPairing(request);
-    if (action === "nearby-create") return this.createNearbyRelay();
-    if (action === "nearby-write") return this.writeNearbyAnswer(request);
-    if (action === "nearby-read") return this.readNearbyAnswer(request);
+    if (action === "nearby-create-session") return this.createNearbySession();
+    if (action === "nearby-signal") return this.openNearbySignal(request);
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("Expected Upgrade: websocket", { status: 426 });
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
@@ -137,6 +144,8 @@ export class GroupSyncRoom extends DurableObject<Env> {
     } catch {
       return send(socket, { type: "error", code: "invalid-message", message: "The temporary relay could not read that message." });
     }
+    if (value.type === "nearby-join") return this.joinNearby(socket, value);
+    if (value.type === "nearby-signal") return this.relayNearbySignal(socket, value);
     if (value.type === "authenticate") return this.authenticate(socket, value);
     if (value.type === "ping") return send(socket, { type: "pong" });
     if (!this.attachment(socket).authorized) return send(socket, { type: "error", code: "not-authenticated", message: "Pair this browser before transferring." });
@@ -148,6 +157,10 @@ export class GroupSyncRoom extends DurableObject<Env> {
 
   webSocketClose(socket: WebSocket) {
     const attachment = this.attachment(socket);
+    if (attachment.nearbyRole) {
+      for (const peer of this.ctx.getWebSockets()) if (peer !== socket && this.attachment(peer).nearbyRole) send(peer, { type: "nearby-peer-left" });
+      return;
+    }
     if (!attachment.authorized) return;
     for (const peer of this.ctx.getWebSockets()) if (peer !== socket && this.attachment(peer).authorized) send(peer, { type: "peer-left" });
   }
@@ -175,46 +188,53 @@ export class GroupSyncRoom extends DurableObject<Env> {
     return json({ pairingToken: pairToken, expiresAt: new Date(expiresAt).toISOString() }, { status: 201 });
   }
 
-  private async createNearbyRelay() {
-    if (await this.ctx.storage.get<boolean>("nearby:created")) return json({ error: "relay-exists" }, { status: 409 });
+  private async createNearbySession() {
+    if (await this.ctx.storage.get<NearbySessionRecord>("nearby:session")) return json({ error: "code-exists" }, { status: 409 });
     const credential = token(32);
-    const expiresAt = Date.now() + NEARBY_RELAY_TTL_MS;
+    const expiresAt = Date.now() + NEARBY_SESSION_TTL_MS;
     await this.ctx.storage.put({
-      "nearby:created": true,
-      [`nearby:credential:${await hash(credential)}`]: true,
+      "nearby:session": { expiresAt } satisfies NearbySessionRecord,
+      [`nearby:host:${await hash(credential)}`]: true,
     });
     await this.ctx.storage.setAlarm(expiresAt);
     return json({ credential, expiresAt: new Date(expiresAt).toISOString() }, { status: 201 });
   }
 
-  private async writeNearbyAnswer(request: Request) {
-    if (!(await this.hasNearbyCredential(authorization(request)))) return json({ error: "not-authorized" }, { status: 401 });
-    const code = request.headers.get("X-Going-Dutch-Answer-Code");
-    if (!code || !/^\d{6}$/.test(code) || Number(request.headers.get("Content-Length") || "0") > MAX_NEARBY_ANSWER_LENGTH) return json({ error: "invalid-answer" }, { status: 400 });
-    let body: unknown;
-    try { body = await request.json(); } catch { return json({ error: "invalid-answer" }, { status: 400 }); }
-    const answer = (body as Record<string, unknown> | undefined)?.answer;
-    if (typeof answer !== "string" || answer.length === 0 || answer.length > MAX_NEARBY_ANSWER_LENGTH || !/^[A-Za-z0-9_-]+$/.test(answer)) return json({ error: "invalid-answer" }, { status: 400 });
-    const expiresAt = Date.now() + NEARBY_ANSWER_TTL_MS;
-    await this.ctx.storage.put(`nearby:answer:${code}`, { answer, expiresAt } satisfies NearbyAnswerRecord);
-    return json({ expiresAt: new Date(expiresAt).toISOString() }, { status: 201 });
+  private async openNearbySignal(request: Request) {
+    const session = await this.ctx.storage.get<NearbySessionRecord>("nearby:session");
+    if (!session || session.expiresAt <= Date.now()) return json({ error: "pairing-expired" }, { status: 410 });
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    this.ctx.acceptWebSocket(server);
+    server.serializeAttachment({ authorized: false } satisfies SocketAttachment);
+    return new Response(null, { status: 101, webSocket: client });
   }
 
-  private async readNearbyAnswer(request: Request) {
-    if (!(await this.hasNearbyCredential(authorization(request)))) return json({ error: "not-authorized" }, { status: 401 });
-    const code = request.headers.get("X-Going-Dutch-Answer-Code");
-    if (!code || !/^\d{6}$/.test(code)) return json({ error: "invalid-answer" }, { status: 400 });
-    const key = `nearby:answer:${code}`;
-    const record = await this.ctx.storage.get<NearbyAnswerRecord>(key);
-    if (!record) return json({ error: "answer-not-found" }, { status: 404 });
-    await this.ctx.storage.delete(key);
-    if (record.expiresAt <= Date.now()) return json({ error: "answer-expired" }, { status: 410 });
-    return json({ answer: record.answer });
+  private async joinNearby(socket: WebSocket, value: Record<string, unknown>) {
+    const session = await this.ctx.storage.get<NearbySessionRecord>("nearby:session");
+    if (!session || session.expiresAt <= Date.now()) return send(socket, { type: "nearby-error", message: "This six-digit code has expired. Ask the first device to create a new one." });
+    const role = value.role === "host" || value.role === "guest" ? value.role : undefined;
+    if (!role) return send(socket, { type: "nearby-error", message: "This nearby pairing role is invalid." });
+    const peers = this.ctx.getWebSockets().filter(peer => this.attachment(peer).nearbyRole);
+    if (peers.some(peer => this.attachment(peer).nearbyRole === role) || peers.length >= 2) return send(socket, { type: "nearby-error", message: "This nearby pairing room is already full." });
+    if (role === "host") {
+      const credential = typeof value.credential === "string" ? value.credential : undefined;
+      if (!credential || credential.length > 256 || !await this.ctx.storage.get<boolean>(`nearby:host:${await hash(credential)}`)) return send(socket, { type: "nearby-error", message: "This device cannot host that nearby pairing code." });
+    }
+    if (role === "guest" && !peers.some(peer => this.attachment(peer).nearbyRole === "host")) return send(socket, { type: "nearby-error", message: "The first device is no longer waiting for this code." });
+    socket.serializeAttachment({ authorized: true, nearbyRole: role } satisfies SocketAttachment);
+    send(socket, { type: "nearby-joined" });
+    const joined = this.ctx.getWebSockets().filter(peer => this.attachment(peer).nearbyRole);
+    if (joined.length === 2) for (const peer of joined) send(peer, { type: "nearby-peer-ready" });
   }
 
-  private async hasNearbyCredential(credential: string | undefined) {
-    if (!credential || credential.length > 256) return false;
-    return Boolean(await this.ctx.storage.get<boolean>(`nearby:credential:${await hash(credential)}`));
+  private relayNearbySignal(socket: WebSocket, value: Record<string, unknown>) {
+    const attachment = this.attachment(socket);
+    const signal = value.signal;
+    if (!attachment.nearbyRole || !signal || typeof signal !== "object" || JSON.stringify(signal).length > MAX_NEARBY_SIGNAL_LENGTH) return send(socket, { type: "nearby-error", message: "The nearby pairing message is invalid." });
+    const payload = signal as Record<string, unknown>;
+    if ((payload.kind !== "description" && payload.kind !== "candidate") || (payload.kind === "description" && (!payload.description || typeof payload.description !== "object")) || (payload.kind === "candidate" && (!payload.candidate || typeof payload.candidate !== "object"))) return send(socket, { type: "nearby-error", message: "The nearby pairing message is invalid." });
+    for (const peer of this.ctx.getWebSockets()) if (peer !== socket && this.attachment(peer).nearbyRole) send(peer, { type: "nearby-signal", signal });
   }
 
   private async authenticate(socket: WebSocket, value: Record<string, unknown>) {
