@@ -8,6 +8,8 @@ const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 const MAX_RECONNECT_ROUNDS = 2;
 const CONNECT_TIMEOUT_MS = 20_000;
 const TRANSFER_TIMEOUT_MS = 90_000;
+const ANSWER_CODE_TTL_MS = 60_000;
+const ANSWER_RELAY_URL = import.meta.env.VITE_CLOUD_SYNC_URL?.replace(/\/$/, "");
 
 export type NearbySyncStatus = "idle" | "preparing" | "awaiting-answer" | "awaiting-offer" | "connecting" | "transferring" | "merging" | "complete" | "failed";
 
@@ -23,6 +25,14 @@ interface PairingEnvelope {
   sessionId: string;
   groupId: string;
   description: RTCSessionDescriptionInit;
+  answerRelay?: AnswerRelay;
+}
+
+interface AnswerRelay {
+  endpoint: string;
+  roomId: string;
+  credential: string;
+  key: string;
 }
 
 interface HelloPacket {
@@ -91,6 +101,20 @@ function base64ToBytes(value: string) {
   return Uint8Array.from(atob(value), character => character.charCodeAt(0));
 }
 
+function toArrayBuffer(bytes: Uint8Array) {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
+function isAnswerRelay(value: unknown): value is AnswerRelay {
+  if (!value || typeof value !== "object") return false;
+  const relay = value as Record<string, unknown>;
+  if (typeof relay.endpoint !== "string" || relay.endpoint.length > 512 || typeof relay.roomId !== "string" || typeof relay.credential !== "string" || typeof relay.key !== "string") return false;
+  try { new URL(relay.endpoint); } catch { return false; }
+  return /^[A-Za-z0-9_-]{24,128}$/.test(relay.roomId)
+    && /^[A-Za-z0-9_-]{32,128}$/.test(relay.credential)
+    && /^[A-Za-z0-9_-]{43}$/.test(relay.key);
+}
+
 function isPairingEnvelope(value: unknown): value is PairingEnvelope {
   if (!value || typeof value !== "object") return false;
   const data = value as Record<string, unknown>;
@@ -100,7 +124,8 @@ function isPairingEnvelope(value: unknown): value is PairingEnvelope {
     && /^[A-Za-z0-9_-]{20,80}$/.test(data.sessionId)
     && typeof data.groupId === "string"
     && data.description !== null
-    && typeof data.description === "object";
+    && typeof data.description === "object"
+    && (data.answerRelay === undefined || isAnswerRelay(data.answerRelay));
 }
 
 async function encodePairingEnvelope(value: PairingEnvelope) {
@@ -123,6 +148,74 @@ async function decodePairingEnvelope(code: string) {
   try { parsed = JSON.parse(decoder.decode(payload)); } catch { throw new Error("This pairing code could not be read."); }
   if (!isPairingEnvelope(parsed)) throw new Error("This pairing code is not supported.");
   return parsed;
+}
+
+function sixDigitCode() {
+  const upperBound = Math.floor(0x1_0000_0000 / 1_000_000) * 1_000_000;
+  while (true) {
+    const value = crypto.getRandomValues(new Uint32Array(1))[0];
+    if (value < upperBound) return String(value % 1_000_000).padStart(6, "0");
+  }
+}
+
+async function answerRelayKey(relay: AnswerRelay, usage: KeyUsage[]) {
+  const raw = base64UrlToBytes(relay.key);
+  if (raw.byteLength !== 32) throw new Error("This nearby pairing link has an invalid answer key.");
+  return crypto.subtle.importKey("raw", toArrayBuffer(raw), "AES-GCM", false, usage);
+}
+
+async function encryptRelayAnswer(relay: AnswerRelay, answer: string) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await answerRelayKey(relay, ["encrypt"]), toArrayBuffer(encoder.encode(answer))));
+  const payload = new Uint8Array(iv.byteLength + ciphertext.byteLength);
+  payload.set(iv);
+  payload.set(ciphertext, iv.byteLength);
+  return bytesToBase64Url(payload);
+}
+
+async function decryptRelayAnswer(relay: AnswerRelay, payload: string) {
+  let encrypted: Uint8Array;
+  try { encrypted = base64UrlToBytes(payload); } catch { throw new Error("The nearby answer could not be read."); }
+  if (encrypted.byteLength < 29 || encrypted.byteLength > 80 * 1024) throw new Error("The nearby answer is invalid.");
+  try {
+    const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: encrypted.subarray(0, 12) }, await answerRelayKey(relay, ["decrypt"]), toArrayBuffer(encrypted.subarray(12)));
+    return decoder.decode(plaintext);
+  } catch { throw new Error("The nearby answer could not be decrypted."); }
+}
+
+async function createAnswerRelay(): Promise<AnswerRelay | undefined> {
+  if (!ANSWER_RELAY_URL) return undefined;
+  let response: Response;
+  try { response = await fetch(`${ANSWER_RELAY_URL}/v1/nearby`, { method: "POST" }); }
+  catch { throw new Error("The temporary answer-code service is unavailable. Check your connection and try again."); }
+  let body: unknown;
+  try { body = await response.json(); } catch { body = undefined; }
+  const data = body as Record<string, unknown> | undefined;
+  if (!response.ok || !data || typeof data.roomId !== "string" || typeof data.credential !== "string") {
+    throw new Error("The temporary answer-code service could not create a pairing session.");
+  }
+  return { endpoint: ANSWER_RELAY_URL, roomId: data.roomId, credential: data.credential, key: bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32))) };
+}
+
+async function publishRelayAnswer(relay: AnswerRelay, code: string, answer: string) {
+  const response = await fetch(`${relay.endpoint}/v1/nearby/${relay.roomId}/${code}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${relay.credential}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ answer: await encryptRelayAnswer(relay, answer) }),
+  });
+  if (!response.ok) throw new Error("The temporary answer code could not be published. Try pairing again.");
+}
+
+async function readRelayAnswer(relay: AnswerRelay, code: string) {
+  let response: Response;
+  try { response = await fetch(`${relay.endpoint}/v1/nearby/${relay.roomId}/${code}`, { headers: { Authorization: `Bearer ${relay.credential}` } }); }
+  catch { throw new Error("The temporary answer-code service is unavailable. Check your connection and try again."); }
+  if (response.status === 404 || response.status === 410) throw new Error("That six-digit answer code has expired or was already used. Pair again.");
+  let body: unknown;
+  try { body = await response.json(); } catch { body = undefined; }
+  const answer = (body as Record<string, unknown> | undefined)?.answer;
+  if (!response.ok || typeof answer !== "string") throw new Error("The temporary answer code could not be read. Try pairing again.");
+  return decryptRelayAnswer(relay, answer);
 }
 
 async function sha256(bytes: Uint8Array) {
@@ -156,6 +249,7 @@ export class NearbySyncSession {
   private incoming: IncomingSnapshot | null = null;
   private localHeads: string[] = [];
   private peerHeads: string[] | null = null;
+  private answerRelay: AnswerRelay | undefined;
   private receivedSnapshot = false;
   private sentSnapshot = false;
   private resyncRounds = 0;
@@ -172,14 +266,15 @@ export class NearbySyncSession {
     this.sessionId = crypto.randomUUID().replace(/-/g, "");
     this.localHeads = snapshot.heads;
     this.callbacks.onState({ status: "preparing", detail: "Preparing a nearby connection…", groupId });
+    this.answerRelay = await createAnswerRelay();
     const connection = this.createConnection();
     const channel = connection.createDataChannel("going-dutch-sync", { ordered: true });
     this.attachChannel(channel);
     const offer = await connection.createOffer();
     await connection.setLocalDescription(offer);
     await waitForIceGathering(connection);
-    this.callbacks.onState({ status: "awaiting-answer", detail: "Scan this code on the other device, then scan its answer.", groupId });
-    return encodePairingEnvelope({ version: 1, kind: "offer", sessionId: this.sessionId, groupId, description: connection.localDescription!.toJSON() });
+    this.callbacks.onState({ status: "awaiting-answer", detail: this.answerRelay ? "Scan this code on the other device, then enter its six-digit answer within 60 seconds." : "Scan this code on the other device, then scan its answer.", groupId });
+    return encodePairingEnvelope({ version: 1, kind: "offer", sessionId: this.sessionId, groupId, description: connection.localDescription!.toJSON(), answerRelay: this.answerRelay });
   }
 
   async acceptOffer(code: string) {
@@ -197,12 +292,25 @@ export class NearbySyncSession {
     const answer = await connection.createAnswer();
     await connection.setLocalDescription(answer);
     await waitForIceGathering(connection);
-    this.callbacks.onState({ status: "connecting", detail: "Show this answer code to the first device.", groupId: this.groupId });
-    return encodePairingEnvelope({ version: 1, kind: "answer", sessionId: this.sessionId, groupId: this.groupId, description: connection.localDescription!.toJSON() });
+    const response = await encodePairingEnvelope({ version: 1, kind: "answer", sessionId: this.sessionId, groupId: this.groupId, description: connection.localDescription!.toJSON() });
+    if (!offer.answerRelay) {
+      this.callbacks.onState({ status: "connecting", detail: "Show this answer code to the first device.", groupId: this.groupId });
+      return response;
+    }
+    const answerCode = sixDigitCode();
+    await publishRelayAnswer(offer.answerRelay, answerCode, response);
+    this.callbacks.onState({ status: "connecting", detail: `Show the six-digit answer within ${ANSWER_CODE_TTL_MS / 1000} seconds.`, groupId: this.groupId });
+    return answerCode;
   }
 
   async acceptAnswer(code: string) {
-    const answer = await decodePairingEnvelope(code);
+    const value = code.trim();
+    let answerValue = value;
+    if (/^\d{6}$/.test(value)) {
+      if (!this.answerRelay) throw new Error("This pairing session does not use a six-digit answer code.");
+      answerValue = await readRelayAnswer(this.answerRelay, value);
+    }
+    const answer = await decodePairingEnvelope(answerValue);
     if (answer.kind !== "answer" || answer.sessionId !== this.sessionId || answer.groupId !== this.groupId || !this.connection) {
       throw new Error("This answer belongs to a different nearby sync session.");
     }
@@ -365,6 +473,7 @@ export class NearbySyncSession {
     this.receivedSnapshot = false;
     this.sentSnapshot = false;
     this.resyncRounds = 0;
+    this.answerRelay = undefined;
     if (emitIdle) this.callbacks.onState({ status: "idle", detail: "Ready to sync a nearby device." });
     this.stopped = false;
   }
