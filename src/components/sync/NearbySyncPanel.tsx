@@ -7,17 +7,35 @@ import { Button } from "@/components/ui/button";
 import { nearbyPairingUrl } from "@/sync/nearby";
 import { cloudPairingUrl } from "@/sync/cloud";
 
-export function NearbySyncPanel({ groupId, groupName }: { groupId: string; groupName: string }) {
+const SUCCESS_DISMISS_MS = 1_500;
+
+interface NearbySyncPanelProps {
+  groupId: string;
+  groupName: string;
+  onComplete?: () => void;
+}
+
+export function NearbySyncPanel({ groupId, groupName, onComplete }: NearbySyncPanelProps) {
   const { cancelNearbySync, createNearbyOffer, nearbySync, cloudSync, cloudTransferAvailable, createCloudTransfer, cancelCloudTransfer } = useGroupContext();
   const [offer, setOffer] = useState<string>();
   const [copied, setCopied] = useState(false);
   const [cloudCode, setCloudCode] = useState<string>();
 
+  useEffect(() => {
+    if (nearbySync.status !== "complete") return;
+    const timer = window.setTimeout(() => {
+      cancelNearbySync();
+      setOffer(undefined);
+      onComplete?.();
+    }, SUCCESS_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [cancelNearbySync, nearbySync.status, onComplete]);
+
   const start = async () => {
     try {
       setOffer(await createNearbyOffer(groupId));
       setCopied(false);
-    } catch { cancelNearbySync(); }
+    } catch { /* The sync state contains the user-facing error. */ }
   };
   const copy = async () => {
     if (!offer) return;
@@ -49,11 +67,21 @@ export function IncomingNearbySyncDialog() {
   const { acceptNearbyOffer, cancelNearbySync, clearPendingNearbyOffer, nearbySync, pendingNearbyOffer } = useGroupContext();
   useEffect(() => {
     if (!pendingNearbyOffer) return;
-    void acceptNearbyOffer(pendingNearbyOffer).catch(clearPendingNearbyOffer);
-  }, [acceptNearbyOffer, clearPendingNearbyOffer, pendingNearbyOffer]);
+    void acceptNearbyOffer(pendingNearbyOffer).catch(() => undefined);
+  }, [acceptNearbyOffer, pendingNearbyOffer]);
+  useEffect(() => {
+    if (!pendingNearbyOffer || nearbySync.status !== "complete") return;
+    const timer = window.setTimeout(() => {
+      cancelNearbySync();
+      clearPendingNearbyOffer();
+    }, SUCCESS_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [cancelNearbySync, clearPendingNearbyOffer, nearbySync.status, pendingNearbyOffer]);
   if (!pendingNearbyOffer) return null;
   const close = () => { cancelNearbySync(); clearPendingNearbyOffer(); };
-  return <div className="fixed inset-0 z-[70] grid place-items-center bg-background/85 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="nearby-receive-title"><div className="app-surface w-full max-w-md space-y-4 p-5 text-center"><div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10"><Smartphone className="h-5 w-5 text-emerald-400" /></div><div><h2 id="nearby-receive-title" className="text-lg font-semibold">Join nearby sync</h2><p className="mt-1 text-sm text-muted-foreground">Joining code <span className="font-mono text-foreground">{pendingNearbyOffer}</span>. Keep both browsers open while the direct connection is made.</p></div><div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{nearbySync.detail}</div>{nearbySync.status === "transferring" || nearbySync.status === "merging" ? <Alert className="text-left"><Loader2 className="h-4 w-4 animate-spin" /><AlertTitle>Sync in progress</AlertTitle><AlertDescription>{nearbySync.detail}</AlertDescription></Alert> : null}{nearbySync.status === "complete" ? <Alert className="border-emerald-500/40 text-left"><Check className="h-4 w-4 text-emerald-400" /><AlertTitle>Group received</AlertTitle><AlertDescription>{nearbySync.detail}</AlertDescription></Alert> : null}<Button type="button" variant="ghost" onClick={close} className="w-full">Cancel</Button></div></div>;
+  const finished = nearbySync.status === "complete";
+  const failed = nearbySync.status === "failed";
+  return <div className="fixed inset-0 z-[70] grid place-items-center bg-background/85 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="nearby-receive-title"><div className="app-surface w-full max-w-md space-y-4 p-5 text-center"><div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10"><Smartphone className="h-5 w-5 text-emerald-400" /></div><div><h2 id="nearby-receive-title" className="text-lg font-semibold">Join nearby sync</h2><p className="mt-1 text-sm text-muted-foreground">Joining code <span className="font-mono text-foreground">{pendingNearbyOffer}</span>. Keep both browsers open while the direct connection is made.</p></div>{finished ? <Alert className="border-emerald-500/40 text-left"><Check className="h-4 w-4 text-emerald-400" /><AlertTitle>Group received</AlertTitle><AlertDescription>{nearbySync.detail}</AlertDescription></Alert> : failed ? <Alert className="border-destructive/40 text-left"><AlertTitle>Nearby sync did not connect</AlertTitle><AlertDescription>{nearbySync.detail}</AlertDescription></Alert> : <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{nearbySync.detail}</div>}<Button type="button" variant={finished ? "default" : "ghost"} onClick={close} className="w-full">{finished ? "Done" : failed ? "Close" : "Cancel"}</Button></div></div>;
 }
 
 export function IncomingCloudTransferDialog() {
