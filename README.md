@@ -24,20 +24,20 @@ That also means clearing your browser data clears the app's data. The app only k
 
 Open a group and choose **Sync** to transfer that group to another device.
 
-- **Sync nearby** connects two open browsers directly on the same Wi-Fi. Scan the offer QR on the receiving device, then scan or paste its answer code on the sender. It works without internet or an account.
+- **Sync nearby** connects two open browsers directly on the same Wi-Fi. The sender shows a QR code and six-digit code that expires after 60 seconds. Cloudflare coordinates the WebRTC connection, while group data travels directly between the devices.
 - **Encrypted cloud transfer** is an optional fallback for a deployed Cloudflare relay. It is manual, temporary, and end-to-end encrypted; Cloudflare receives encrypted frames only.
 - **Encrypted file backup** creates a password-protected `.going-dutch-sync` file for recovery or manual transfer via AirDrop, Nearby Share, Bluetooth, USB, or removable storage.
 
 Matching group histories merge rather than overwrite. None of these modes provides automatic background synchronization.
 
-### Enable Cloudflare fallback
+### Enable Cloudflare sync services
 
-The primary nearby mode needs no deployment beyond the static app. To enable the optional Cloudflare fallback, deploy the separate Worker in `packages/cloud-sync` and configure two values before release:
+Nearby pairing and the optional encrypted cloud fallback use the separate Worker in `packages/cloud-sync`. Configure two values before release:
 
 1. Set `ALLOWED_ORIGINS` in `packages/cloud-sync/wrangler.jsonc` to the exact Cloudflare Pages origin (and any production custom domain).
 2. Set `VITE_CLOUD_SYNC_URL` in the Pages build environment to the deployed Worker origin, such as `https://going-dutch-sync.example.workers.dev`.
 
-Then deploy from the project root with `npx wrangler deploy --config packages/cloud-sync/wrangler.jsonc`. The fallback button remains hidden until the Pages build receives `VITE_CLOUD_SYNC_URL`.
+Then deploy from the project root with `npx wrangler deploy --config packages/cloud-sync/wrangler.jsonc`. Nearby code pairing is unavailable until the Pages build receives `VITE_CLOUD_SYNC_URL`, and the encrypted cloud fallback button remains hidden.
 
 Going Dutch is installable as a PWA. Open it online once so the app shell is cached, then it can launch and operate in airplane mode.
 
@@ -62,3 +62,14 @@ npm run preview  # preview the production build
 ## Tech
 
 Vite, React 18, TypeScript, Tailwind CSS, shadcn/ui, and Cloudflare Workers.
+
+## Changelog
+
+### 2026-07-31 — Nearby device sync
+
+- Replaced manual WebRTC offer and answer exchange with a QR code and six-digit pairing room.
+- Added a 60-second expiry for pairing codes and Cloudflare Durable Object signaling rooms.
+- Kept group transfer peer-to-peer over WebRTC; the Worker exchanges connection signals only.
+- Added clear waiting, connecting, transferring, merging, success, and failure states.
+- Pairing dialogs now show completion briefly, then close automatically on both devices.
+- Connection and configuration errors remain visible with retry or fallback actions.
