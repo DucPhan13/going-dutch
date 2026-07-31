@@ -1,10 +1,13 @@
 import { DurableObject } from "cloudflare:workers";
 
 const PAIRING_TTL_MS = 5 * 60 * 1000;
+const NEARBY_RELAY_TTL_MS = 5 * 60 * 1000;
+const NEARBY_ANSWER_TTL_MS = 60 * 1000;
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_DEVICE_ID_LENGTH = 120;
 const MAX_DEVICE_NAME_LENGTH = 80;
 const MAX_FRAME_LENGTH = 256 * 1024;
+const MAX_NEARBY_ANSWER_LENGTH = 80 * 1024;
 
 interface DeviceRecord {
   deviceId: string;
@@ -13,6 +16,7 @@ interface DeviceRecord {
 }
 
 interface PairingRecord { expiresAt: number }
+interface NearbyAnswerRecord { answer: string; expiresAt: number }
 interface SocketAttachment { authorized: boolean; deviceId?: string }
 
 function json(body: unknown, init: ResponseInit = {}) {
@@ -71,6 +75,24 @@ export default {
       const body = await response.json<Record<string, unknown>>();
       return json({ ...body, roomId: response.ok ? id : undefined }, { status: response.status, headers: corsHeaders });
     }
+    if (request.method === "POST" && url.pathname === "/v1/nearby") {
+      const id = token(24);
+      const headers = new Headers(request.headers);
+      headers.set("X-Going-Dutch-Action", "nearby-create");
+      const response = await env.SYNC_ROOMS.getByName(id).fetch(new Request(request, { headers }));
+      const body = await response.json<Record<string, unknown>>();
+      return json({ ...body, roomId: response.ok ? id : undefined }, { status: response.status, headers: corsHeaders });
+    }
+    const nearby = url.pathname.match(/^\/v1\/nearby\/([A-Za-z0-9_-]{24,128})\/(\d{6})$/);
+    if (nearby && (request.method === "POST" || request.method === "GET")) {
+      const headers = new Headers(request.headers);
+      headers.set("X-Going-Dutch-Action", request.method === "POST" ? "nearby-write" : "nearby-read");
+      headers.set("X-Going-Dutch-Answer-Code", nearby[2]);
+      const response = await env.SYNC_ROOMS.getByName(nearby[1]).fetch(new Request(request, { headers }));
+      const responseHeaders = new Headers(response.headers);
+      for (const [key, value] of Object.entries(corsHeaders)) responseHeaders.set(key, value);
+      return new Response(response.body, { status: response.status, headers: responseHeaders });
+    }
     const match = url.pathname.match(/^\/v1\/rooms\/([A-Za-z0-9_-]{24,128})\/(pair|sync)$/);
     if (!match || !roomId(match[1])) return json({ error: "not-found" }, { status: 404, headers: corsHeaders });
     const [, id, action] = match;
@@ -95,6 +117,9 @@ export class GroupSyncRoom extends DurableObject<Env> {
     const action = request.headers.get("X-Going-Dutch-Action");
     if (action === "bootstrap") return this.bootstrap(request);
     if (action === "pair") return this.createPairing(request);
+    if (action === "nearby-create") return this.createNearbyRelay();
+    if (action === "nearby-write") return this.writeNearbyAnswer(request);
+    if (action === "nearby-read") return this.readNearbyAnswer(request);
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("Expected Upgrade: websocket", { status: 426 });
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
@@ -148,6 +173,48 @@ export class GroupSyncRoom extends DurableObject<Env> {
     const expiresAt = Date.now() + PAIRING_TTL_MS;
     await this.ctx.storage.put(`pair:${await hash(pairToken)}`, { expiresAt } satisfies PairingRecord);
     return json({ pairingToken: pairToken, expiresAt: new Date(expiresAt).toISOString() }, { status: 201 });
+  }
+
+  private async createNearbyRelay() {
+    if (await this.ctx.storage.get<boolean>("nearby:created")) return json({ error: "relay-exists" }, { status: 409 });
+    const credential = token(32);
+    const expiresAt = Date.now() + NEARBY_RELAY_TTL_MS;
+    await this.ctx.storage.put({
+      "nearby:created": true,
+      [`nearby:credential:${await hash(credential)}`]: true,
+    });
+    await this.ctx.storage.setAlarm(expiresAt);
+    return json({ credential, expiresAt: new Date(expiresAt).toISOString() }, { status: 201 });
+  }
+
+  private async writeNearbyAnswer(request: Request) {
+    if (!(await this.hasNearbyCredential(authorization(request)))) return json({ error: "not-authorized" }, { status: 401 });
+    const code = request.headers.get("X-Going-Dutch-Answer-Code");
+    if (!code || !/^\d{6}$/.test(code) || Number(request.headers.get("Content-Length") || "0") > MAX_NEARBY_ANSWER_LENGTH) return json({ error: "invalid-answer" }, { status: 400 });
+    let body: unknown;
+    try { body = await request.json(); } catch { return json({ error: "invalid-answer" }, { status: 400 }); }
+    const answer = (body as Record<string, unknown> | undefined)?.answer;
+    if (typeof answer !== "string" || answer.length === 0 || answer.length > MAX_NEARBY_ANSWER_LENGTH || !/^[A-Za-z0-9_-]+$/.test(answer)) return json({ error: "invalid-answer" }, { status: 400 });
+    const expiresAt = Date.now() + NEARBY_ANSWER_TTL_MS;
+    await this.ctx.storage.put(`nearby:answer:${code}`, { answer, expiresAt } satisfies NearbyAnswerRecord);
+    return json({ expiresAt: new Date(expiresAt).toISOString() }, { status: 201 });
+  }
+
+  private async readNearbyAnswer(request: Request) {
+    if (!(await this.hasNearbyCredential(authorization(request)))) return json({ error: "not-authorized" }, { status: 401 });
+    const code = request.headers.get("X-Going-Dutch-Answer-Code");
+    if (!code || !/^\d{6}$/.test(code)) return json({ error: "invalid-answer" }, { status: 400 });
+    const key = `nearby:answer:${code}`;
+    const record = await this.ctx.storage.get<NearbyAnswerRecord>(key);
+    if (!record) return json({ error: "answer-not-found" }, { status: 404 });
+    await this.ctx.storage.delete(key);
+    if (record.expiresAt <= Date.now()) return json({ error: "answer-expired" }, { status: 410 });
+    return json({ answer: record.answer });
+  }
+
+  private async hasNearbyCredential(credential: string | undefined) {
+    if (!credential || credential.length > 256) return false;
+    return Boolean(await this.ctx.storage.get<boolean>(`nearby:credential:${await hash(credential)}`));
   }
 
   private async authenticate(socket: WebSocket, value: Record<string, unknown>) {
