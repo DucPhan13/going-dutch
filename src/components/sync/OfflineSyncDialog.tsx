@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, FileKey2, HardDrive, Loader2, ShieldCheck, Upload } from "lucide-react";
 import { useGroupContext } from "@/contexts/GroupContext";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -29,6 +29,7 @@ export default function OfflineSyncDialog({ groupId, groupName, open, onOpenChan
   const [importFile, setImportFile] = useState<File | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const closeAfterNearbySync = useCallback(() => onOpenChange(false), [onOpenChange]);
 
   useEffect(() => {
     if (open) return;
@@ -112,7 +113,7 @@ export default function OfflineSyncDialog({ groupId, groupName, open, onOpenChan
           </DialogDescription>
         </DialogHeader>
 
-        <NearbySyncPanel groupId={groupId} groupName={groupName} />
+        <NearbySyncPanel groupId={groupId} groupName={groupName} onComplete={closeAfterNearbySync} />
 
         <Tabs defaultValue="export" className="mt-2">
           <TabsList className="grid w-full grid-cols-2">

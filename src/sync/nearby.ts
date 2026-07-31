@@ -7,7 +7,6 @@ const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 const MAX_RECONNECT_ROUNDS = 2;
 const CONNECT_TIMEOUT_MS = 20_000;
 const TRANSFER_TIMEOUT_MS = 90_000;
-const PAIRING_TIMEOUT_MS = 60_000;
 const SIGNAL_ENDPOINT = import.meta.env.VITE_CLOUD_SYNC_URL?.replace(/\/$/, "");
 
 export type NearbySyncStatus = "idle" | "preparing" | "awaiting-peer" | "awaiting-offer" | "connecting" | "transferring" | "merging" | "complete" | "failed";
@@ -183,27 +182,39 @@ export class NearbySyncSession {
 
   async createOffer(groupId: string) {
     this.reset();
-    const snapshot = this.repository.getDocumentSnapshot(groupId);
-    if (!snapshot) throw new Error("This group is no longer available on this device.");
-    this.groupId = groupId;
-    this.sessionId = crypto.randomUUID().replace(/-/g, "");
-    this.localHeads = snapshot.heads;
-    this.callbacks.onState({ status: "preparing", detail: "Creating a six-digit nearby pairing code…", groupId });
-    const session = await createNearbySession();
-    this.signal = this.createSignal(session, "host");
-    await this.signal.connect();
-    this.callbacks.onState({ status: "awaiting-peer", detail: "Show this code to the other device. It expires in 60 seconds.", groupId });
-    return session.code;
+    try {
+      const snapshot = this.repository.getDocumentSnapshot(groupId);
+      if (!snapshot) throw new Error("This group is no longer available on this device.");
+      this.groupId = groupId;
+      this.sessionId = crypto.randomUUID().replace(/-/g, "");
+      this.localHeads = snapshot.heads;
+      this.callbacks.onState({ status: "preparing", detail: "Creating a six-digit nearby pairing code…", groupId });
+      const session = await createNearbySession();
+      this.signal = this.createSignal(session, "host");
+      await this.signal.connect();
+      this.callbacks.onState({ status: "awaiting-peer", detail: "Show this code to the other device. It expires in 60 seconds.", groupId });
+      return session.code;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Nearby pairing could not be started.";
+      this.fail(message);
+      throw error instanceof Error ? error : new Error(message);
+    }
   }
 
   async acceptOffer(code: string) {
     this.reset();
-    const value = code.trim();
-    if (!/^\d{6}$/.test(value)) throw new Error("Enter the six-digit nearby pairing code.");
-    this.callbacks.onState({ status: "preparing", detail: "Joining the nearby pairing session…" });
-    this.signal = this.createSignal({ code: value, credential: "", expiresAt: "" }, "guest");
-    await this.signal.connect();
-    this.callbacks.onState({ status: "awaiting-offer", detail: "Connected to the pairing room. Waiting for the other device…" });
+    try {
+      const value = code.trim();
+      if (!/^\d{6}$/.test(value)) throw new Error("Enter the six-digit nearby pairing code.");
+      this.callbacks.onState({ status: "preparing", detail: "Joining the nearby pairing session…" });
+      this.signal = this.createSignal({ code: value, credential: "", expiresAt: "" }, "guest");
+      await this.signal.connect();
+      this.callbacks.onState({ status: "awaiting-offer", detail: "Connected to the pairing room. Waiting for the other device…" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Nearby pairing could not be joined.";
+      this.fail(message);
+      throw error instanceof Error ? error : new Error(message);
+    }
   }
 
   cancel = () => this.reset();
@@ -389,7 +400,7 @@ export class NearbySyncSession {
     if (sameHeads(this.localHeads, this.peerHeads)) {
       if (this.transferTimer !== null) window.clearTimeout(this.transferTimer);
       this.callbacks.onState({ status: "complete", detail: "Nearby sync complete.", groupId: this.groupId });
-      window.setTimeout(() => this.reset(), 1_000);
+      window.setTimeout(() => this.reset(false), 1_000);
       return;
     }
     if (this.resyncRounds >= MAX_RECONNECT_ROUNDS || !this.sentSnapshot) return this.fail("The two copies did not converge. Try sync again.");
