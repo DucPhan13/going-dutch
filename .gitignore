@@ -28,3 +28,4 @@ dist-ssr
 .lan-host-*.pid
 .wrangler/
 *.tsbuildinfo
+test-dist/

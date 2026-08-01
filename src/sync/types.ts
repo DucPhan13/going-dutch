@@ -1,4 +1,4 @@
-import type { Expense, Group, Member, Transaction } from "@/types";
+import type { Expense, Group, Member, Transaction } from "../types/index.js";
 
 export const GROUP_DOCUMENT_SCHEMA_VERSION = 1;
 
@@ -7,6 +7,7 @@ export type SyncErrorCode =
   | "not-ready"
   | "group-not-found"
   | "invalid-data"
+  | "sync-conflict"
   | "unsupported-archive"
   | "archive-too-large"
   | "decryption-failed";

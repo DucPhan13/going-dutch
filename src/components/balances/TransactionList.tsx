@@ -3,9 +3,19 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Trash2, ArrowDownUp } from 'lucide-react';
 import Avatar from '@/components/ui/avatar';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useEffect, useState } from 'react';
 
 const TransactionList = () => {
-  const { currentGroup, clearTransactions } = useGroupContext();
+  const { currentGroup, clearTransactions, undoClearTransactions } = useGroupContext();
+  const [clearPending, setClearPending] = useState(false);
+  const [undoAvailable, setUndoAvailable] = useState(false);
+
+  useEffect(() => {
+    if (!undoAvailable) return;
+    const timer = window.setTimeout(() => setUndoAvailable(false), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [undoAvailable]);
 
   if (!currentGroup) return null;
 
@@ -25,7 +35,7 @@ const TransactionList = () => {
             <Button
               variant="outline"
               size="sm"
-              onClick={clearTransactions}
+              onClick={() => setClearPending(true)}
               className="text-red-400 hover:text-red-300 hover:bg-red-950/30 border-white/10 gap-1.5 h-8"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -33,6 +43,29 @@ const TransactionList = () => {
             </Button>
           )}
         </div>
+
+        {clearPending && (
+          <Alert className="mb-4 border-destructive/40">
+            <AlertTitle>Clear all recorded payments?</AlertTitle>
+            <AlertDescription className="mt-2 space-y-3">
+              <p>This removes {currentGroup.transactions.length} payment{currentGroup.transactions.length === 1 ? '' : 's'} from this group. Balances will be recalculated as unpaid.</p>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setClearPending(false)}>Cancel</Button>
+                <Button type="button" variant="destructive" size="sm" onClick={() => { void clearTransactions().then(cleared => { if (!cleared) return; setClearPending(false); setUndoAvailable(true); }); }}>Clear payments</Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {undoAvailable && (
+          <Alert className="mb-4 border-amber-500/40">
+            <AlertTitle>Payment history cleared</AlertTitle>
+            <AlertDescription className="mt-2 flex items-center justify-between gap-3">
+              <span>Undo is available for 10 seconds.</span>
+              <Button type="button" variant="outline" size="sm" onClick={() => { undoClearTransactions(); setUndoAvailable(false); }}>Undo</Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {currentGroup.transactions.length > 0 ? (
           <div className="space-y-0">

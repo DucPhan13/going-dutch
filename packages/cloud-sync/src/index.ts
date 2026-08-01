@@ -5,8 +5,13 @@ const NEARBY_SESSION_TTL_MS = 60 * 1000;
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_DEVICE_ID_LENGTH = 120;
 const MAX_DEVICE_NAME_LENGTH = 80;
+const MAX_CREDENTIAL_LENGTH = 256;
+const MAX_DEVICE_REQUEST_BYTES = 4 * 1024;
 const MAX_FRAME_LENGTH = 256 * 1024;
 const MAX_NEARBY_SIGNAL_LENGTH = 32 * 1024;
+const MAX_ROOM_CONNECTIONS = 2;
+const CREATION_RATE_WINDOW_MS = 60 * 1000;
+const MAX_CREATIONS_PER_IP_PER_WINDOW = 5;
 
 interface DeviceRecord {
   deviceId: string;
@@ -16,7 +21,12 @@ interface DeviceRecord {
 
 interface PairingRecord { expiresAt: number }
 interface NearbySessionRecord { expiresAt: number }
+interface RateLimitRecord { count: number; resetAt: number }
 interface SocketAttachment { authorized: boolean; deviceId?: string; nearbyRole?: "host" | "guest" }
+
+type BoundedJsonResult =
+  | { value: unknown }
+  | { error: "invalid-json" | "payload-too-large" };
 
 function json(body: unknown, init: ResponseInit = {}) {
   const headers = new Headers(init.headers);
@@ -59,8 +69,48 @@ function authorization(request: Request) {
 function cors(request: Request, env: Env): Record<string, string> | undefined {
   const origin = request.headers.get("Origin");
   const allowed = env.ALLOWED_ORIGINS.split(",").map(value => value.trim()).filter(Boolean);
-  if (!origin || allowed.includes(origin)) return origin ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" } : {};
+  if (origin && allowed.includes(origin)) return { "Access-Control-Allow-Origin": origin, Vary: "Origin" };
   return undefined;
+}
+
+async function readBoundedJson(request: Request, maxBytes: number): Promise<BoundedJsonResult> {
+  const contentLength = request.headers.get("Content-Length");
+  if (contentLength && (!/^\d+$/.test(contentLength) || Number(contentLength) > maxBytes)) return { error: "payload-too-large" };
+  if (!request.body) return { error: "invalid-json" };
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        return { error: "payload-too-large" };
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return { error: "invalid-json" };
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return { value: JSON.parse(new TextDecoder().decode(bytes)) };
+  } catch {
+    return { error: "invalid-json" };
+  }
+}
+
+function websocketMessageByteLength(message: ArrayBuffer | string) {
+  return typeof message === "string" ? new TextEncoder().encode(message).byteLength : message.byteLength;
 }
 
 function send(socket: WebSocket, message: unknown) {
@@ -70,11 +120,13 @@ function send(socket: WebSocket, message: unknown) {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const corsHeaders = cors(request, env);
-    if (!corsHeaders) return json({ error: "origin-not-allowed" }, { status: 403 });
+    if (!corsHeaders) return json({ error: request.headers.get("Origin") ? "origin-not-allowed" : "origin-required" }, { status: 403 });
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { ...corsHeaders, "Access-Control-Allow-Methods": "POST, GET, OPTIONS", "Access-Control-Allow-Headers": "Authorization, Content-Type" } });
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") return json({ status: "ok", service: "going-dutch-sync" }, { headers: corsHeaders });
     if (request.method === "POST" && url.pathname === "/v1/rooms") {
+      const rateLimitResponse = await enforceCreationRateLimit(request, env, corsHeaders);
+      if (rateLimitResponse) return rateLimitResponse;
       const id = token(24);
       const headers = new Headers(request.headers);
       headers.set("X-Going-Dutch-Action", "bootstrap");
@@ -83,6 +135,8 @@ export default {
       return json({ ...body, roomId: response.ok ? id : undefined }, { status: response.status, headers: corsHeaders });
     }
     if (request.method === "POST" && url.pathname === "/v1/nearby/sessions") {
+      const rateLimitResponse = await enforceCreationRateLimit(request, env, corsHeaders);
+      if (rateLimitResponse) return rateLimitResponse;
       for (let attempt = 0; attempt < 5; attempt += 1) {
         const code = sixDigitCode();
         const headers = new Headers(request.headers);
@@ -120,14 +174,32 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
+async function enforceCreationRateLimit(request: Request, env: Env, corsHeaders: Record<string, string>) {
+  const clientIp = request.headers.get("CF-Connecting-IP");
+  if (!clientIp) return json({ error: "client-ip-required" }, { status: 400, headers: corsHeaders });
+  const rateLimiter = env.SYNC_ROOMS.getByName(`rate:${await hash(clientIp)}`);
+  const response = await rateLimiter.fetch(new Request("https://rate-limit.internal/", {
+    method: "POST",
+    headers: { "X-Going-Dutch-Action": "rate-limit" },
+  }));
+  if (response.ok) return undefined;
+  const headers = new Headers(corsHeaders);
+  const retryAfter = response.headers.get("Retry-After");
+  if (retryAfter) headers.set("Retry-After", retryAfter);
+  return json({ error: "rate-limited" }, { status: response.status, headers });
+}
+
 export class GroupSyncRoom extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const action = request.headers.get("X-Going-Dutch-Action");
+    if (action === "rate-limit") return this.consumeCreationAllowance();
     if (action === "bootstrap") return this.bootstrap(request);
     if (action === "pair") return this.createPairing(request);
     if (action === "nearby-create-session") return this.createNearbySession();
     if (action === "nearby-signal") return this.openNearbySignal(request);
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("Expected Upgrade: websocket", { status: 426 });
+    if (!(await this.roomIsActive())) return json({ error: "room-expired" }, { status: 410 });
+    if (this.ctx.getWebSockets().length >= MAX_ROOM_CONNECTIONS) return json({ error: "room-full" }, { status: 429 });
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
@@ -138,8 +210,8 @@ export class GroupSyncRoom extends DurableObject<Env> {
   async webSocketMessage(socket: WebSocket, message: ArrayBuffer | string) {
     let value: Record<string, unknown>;
     try {
+      if (websocketMessageByteLength(message) > MAX_FRAME_LENGTH) throw new Error("too-large");
       const text = typeof message === "string" ? message : new TextDecoder().decode(message);
-      if (text.length > MAX_FRAME_LENGTH) throw new Error("too-large");
       value = JSON.parse(text) as Record<string, unknown>;
     } catch {
       return send(socket, { type: "error", code: "invalid-message", message: "The temporary relay could not read that message." });
@@ -173,7 +245,7 @@ export class GroupSyncRoom extends DurableObject<Env> {
   private async bootstrap(request: Request) {
     if (await this.ctx.storage.get<boolean>("room:created")) return json({ error: "room-exists" }, { status: 409 });
     const device = await this.readDevice(request);
-    if (!device) return json({ error: "invalid-device" }, { status: 400 });
+    if ("error" in device) return json({ error: device.error }, { status: device.error === "payload-too-large" ? 413 : 400 });
     const credential = token(32);
     await this.ctx.storage.put({ "room:created": true, "room:expires": Date.now() + ROOM_TTL_MS, [`device:${await hash(credential)}`]: { ...device, pairedAt: new Date().toISOString() } satisfies DeviceRecord });
     await this.ctx.storage.setAlarm(Date.now() + ROOM_TTL_MS);
@@ -181,6 +253,7 @@ export class GroupSyncRoom extends DurableObject<Env> {
   }
 
   private async createPairing(request: Request) {
+    if (!(await this.roomIsActive())) return json({ error: "room-expired" }, { status: 410 });
     if (!(await this.deviceForCredential(authorization(request)))) return json({ error: "not-paired" }, { status: 401 });
     const pairToken = token(24);
     const expiresAt = Date.now() + PAIRING_TTL_MS;
@@ -189,7 +262,9 @@ export class GroupSyncRoom extends DurableObject<Env> {
   }
 
   private async createNearbySession() {
-    if (await this.ctx.storage.get<NearbySessionRecord>("nearby:session")) return json({ error: "code-exists" }, { status: 409 });
+    const existingSession = await this.ctx.storage.get<NearbySessionRecord>("nearby:session");
+    if (existingSession && existingSession.expiresAt > Date.now()) return json({ error: "code-exists" }, { status: 409 });
+    if (existingSession) await this.ctx.storage.deleteAll();
     const credential = token(32);
     const expiresAt = Date.now() + NEARBY_SESSION_TTL_MS;
     await this.ctx.storage.put({
@@ -203,6 +278,7 @@ export class GroupSyncRoom extends DurableObject<Env> {
   private async openNearbySignal(request: Request) {
     const session = await this.ctx.storage.get<NearbySessionRecord>("nearby:session");
     if (!session || session.expiresAt <= Date.now()) return json({ error: "pairing-expired" }, { status: 410 });
+    if (this.ctx.getWebSockets().length >= MAX_ROOM_CONNECTIONS) return json({ error: "room-full" }, { status: 429 });
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
@@ -231,19 +307,20 @@ export class GroupSyncRoom extends DurableObject<Env> {
   private relayNearbySignal(socket: WebSocket, value: Record<string, unknown>) {
     const attachment = this.attachment(socket);
     const signal = value.signal;
-    if (!attachment.nearbyRole || !signal || typeof signal !== "object" || JSON.stringify(signal).length > MAX_NEARBY_SIGNAL_LENGTH) return send(socket, { type: "nearby-error", message: "The nearby pairing message is invalid." });
+    if (!attachment.nearbyRole || !signal || typeof signal !== "object" || new TextEncoder().encode(JSON.stringify(signal)).byteLength > MAX_NEARBY_SIGNAL_LENGTH) return send(socket, { type: "nearby-error", message: "The nearby pairing message is invalid." });
     const payload = signal as Record<string, unknown>;
     if ((payload.kind !== "description" && payload.kind !== "candidate") || (payload.kind === "description" && (!payload.description || typeof payload.description !== "object")) || (payload.kind === "candidate" && (!payload.candidate || typeof payload.candidate !== "object"))) return send(socket, { type: "nearby-error", message: "The nearby pairing message is invalid." });
     for (const peer of this.ctx.getWebSockets()) if (peer !== socket && this.attachment(peer).nearbyRole) send(peer, { type: "nearby-signal", signal });
   }
 
   private async authenticate(socket: WebSocket, value: Record<string, unknown>) {
-    const deviceId = typeof value.deviceId === "string" ? value.deviceId.slice(0, MAX_DEVICE_ID_LENGTH) : "";
+    if (!(await this.roomIsActive())) return send(socket, { type: "error", code: "room-expired", message: "This temporary sync room has expired." });
+    const deviceId = typeof value.deviceId === "string" && value.deviceId.length <= MAX_DEVICE_ID_LENGTH ? value.deviceId : "";
     if (!deviceId) return send(socket, { type: "error", code: "invalid-device", message: "This browser did not provide a device identity." });
-    const deviceName = typeof value.deviceName === "string" ? value.deviceName.slice(0, MAX_DEVICE_NAME_LENGTH) : "Browser";
+    const deviceName = typeof value.deviceName === "string" && value.deviceName.length <= MAX_DEVICE_NAME_LENGTH ? value.deviceName : "Browser";
     let credential = typeof value.credential === "string" ? value.credential : undefined;
     let device = await this.deviceForCredential(credential);
-    if (!device && typeof value.pairingToken === "string") {
+    if (!device && typeof value.pairingToken === "string" && value.pairingToken.length <= MAX_CREDENTIAL_LENGTH) {
       const pairingKey = `pair:${await hash(value.pairingToken)}`;
       const pairing = await this.ctx.storage.get<PairingRecord>(pairingKey);
       const devices = await this.ctx.storage.list<DeviceRecord>({ prefix: "device:" });
@@ -261,21 +338,40 @@ export class GroupSyncRoom extends DurableObject<Env> {
     if (peers.length === 2) for (const peer of peers) send(peer, { type: "peer-ready" });
   }
 
-  private async readDevice(request: Request) {
-    if (Number(request.headers.get("Content-Length") || "0") > 4096) return undefined;
-    try {
-      const body = await request.json<unknown>();
-      if (!body || typeof body !== "object") return undefined;
-      const input = body as Record<string, unknown>;
-      const deviceId = typeof input.deviceId === "string" ? input.deviceId.slice(0, MAX_DEVICE_ID_LENGTH) : "";
-      if (!deviceId) return undefined;
-      return { deviceId, deviceName: typeof input.deviceName === "string" ? input.deviceName.slice(0, MAX_DEVICE_NAME_LENGTH) : "Browser" };
-    } catch { return undefined; }
+  private async readDevice(request: Request): Promise<{ deviceId: string; deviceName: string } | { error: "invalid-device" | "payload-too-large" }> {
+    const body = await readBoundedJson(request, MAX_DEVICE_REQUEST_BYTES);
+    if ("error" in body) return { error: body.error === "payload-too-large" ? body.error : "invalid-device" };
+    if (!body.value || typeof body.value !== "object") return { error: "invalid-device" };
+    const input = body.value as Record<string, unknown>;
+    if (typeof input.deviceId !== "string" || input.deviceId.length === 0 || input.deviceId.length > MAX_DEVICE_ID_LENGTH) return { error: "invalid-device" };
+    if (input.deviceName !== undefined && (typeof input.deviceName !== "string" || input.deviceName.length > MAX_DEVICE_NAME_LENGTH)) return { error: "invalid-device" };
+    return { deviceId: input.deviceId, deviceName: typeof input.deviceName === "string" ? input.deviceName : "Browser" };
   }
 
   private async deviceForCredential(credential: string | undefined) {
-    if (!credential || credential.length > 256) return undefined;
+    if (!credential || credential.length > MAX_CREDENTIAL_LENGTH) return undefined;
     return this.ctx.storage.get<DeviceRecord>(`device:${await hash(credential)}`);
+  }
+
+  private async roomIsActive() {
+    const expiresAt = await this.ctx.storage.get<number>("room:expires");
+    return Boolean(expiresAt && expiresAt > Date.now());
+  }
+
+  private async consumeCreationAllowance() {
+    const now = Date.now();
+    const existing = await this.ctx.storage.get<RateLimitRecord>("rate-limit");
+    const current = !existing || existing.resetAt <= now
+      ? { count: 0, resetAt: now + CREATION_RATE_WINDOW_MS }
+      : existing;
+    if (current.count >= MAX_CREATIONS_PER_IP_PER_WINDOW) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+      return json({ error: "rate-limited" }, { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } });
+    }
+    const next = { ...current, count: current.count + 1 } satisfies RateLimitRecord;
+    await this.ctx.storage.put("rate-limit", next);
+    await this.ctx.storage.setAlarm(next.resetAt);
+    return json({ ok: true });
   }
 
   private attachment(socket: WebSocket): SocketAttachment {

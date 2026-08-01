@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "test-dist",
+    "rootDir": ".",
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/lib/money.ts",
+    "src/lib/calendar-date.ts",
+    "src/lib/balances.ts",
+    "src/types/index.ts",
+    "src/sync/types.ts",
+    "src/sync/schema.ts",
+    "src/sync/conflicts.ts",
+    "tests/**/*.test.ts"
+  ]
+}

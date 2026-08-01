@@ -2,7 +2,7 @@
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "going-dutch-sync",
   "main": "src/index.ts",
-  "compatibility_date": "2025-04-29",
+  "compatibility_date": "2026-07-08",
   "durable_objects": {
     "bindings": [
       {
@@ -19,9 +19,5 @@
       "tag": "v1",
       "new_sqlite_classes": ["GroupSyncRoom"]
     }
-  ],
-  "observability": {
-    "enabled": true,
-    "head_sampling_rate": 1
-  }
+  ]
 }
