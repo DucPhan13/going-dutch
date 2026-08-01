@@ -20,6 +20,7 @@ interface GroupContextType {
   cloudTransferAvailable: boolean;
   pendingCloudPair?: string;
   createGroup: (name: string) => void;
+  removeGroup: (groupId: string) => Promise<boolean>;
   selectGroup: (id: string) => void;
   addMember: (nameInput: string) => void;
   addMemberToGroup: (groupId: string, name: string) => void;
@@ -129,6 +130,26 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const id = uuidv4();
     setCurrentGroupId(id);
     run(repository.createGroup(id, trimmed), { title: "Group created", description: `${trimmed} has been created successfully.` });
+  };
+
+  const removeGroup = async (groupId: string) => {
+    const group = groups.find(item => item.id === groupId);
+    if (!group) {
+      toast({ title: "Group not found", description: "This group is already unavailable on this device.", variant: "destructive" });
+      return false;
+    }
+    try {
+      await repository.removeGroup(groupId);
+      if (currentGroupId === groupId) setCurrentGroupId(null);
+      refreshGroups();
+      toast({ title: "Group removed", description: `${group.name} was removed from this device.` });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to remove this group.";
+      setSyncError(message);
+      toast({ title: "Could not remove group", description: message, variant: "destructive" });
+      return false;
+    }
   };
 
   const selectGroup = useCallback((id: string) => setCurrentGroupId(id), []);
@@ -275,7 +296,7 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   }
 
-  return <GroupContext.Provider value={{ groups, currentGroup, isLoading, syncError, nearbySync, pendingNearbyOffer, cloudSync, cloudTransferAvailable: Boolean(import.meta.env.VITE_CLOUD_SYNC_URL), pendingCloudPair, createGroup, selectGroup, addMember, addMemberToGroup, editMember, removeMember, addExpense, editExpense, removeExpense, calculateBalances, markBalanceAsPaid, clearTransactions, undoClearTransactions, exportGroupArchive, importGroupArchive, createNearbyOffer, acceptNearbyOffer, beginNearbyJoin, cancelNearbySync, clearPendingNearbyOffer, createCloudTransfer, joinCloudTransfer, cancelCloudTransfer, clearPendingCloudPair }}>{children}</GroupContext.Provider>;
+  return <GroupContext.Provider value={{ groups, currentGroup, isLoading, syncError, nearbySync, pendingNearbyOffer, cloudSync, cloudTransferAvailable: Boolean(import.meta.env.VITE_CLOUD_SYNC_URL), pendingCloudPair, createGroup, removeGroup, selectGroup, addMember, addMemberToGroup, editMember, removeMember, addExpense, editExpense, removeExpense, calculateBalances, markBalanceAsPaid, clearTransactions, undoClearTransactions, exportGroupArchive, importGroupArchive, createNearbyOffer, acceptNearbyOffer, beginNearbyJoin, cancelNearbySync, clearPendingNearbyOffer, createCloudTransfer, joinCloudTransfer, cancelCloudTransfer, clearPendingCloudPair }}>{children}</GroupContext.Provider>;
 };
 
 export const useGroupContext = () => {

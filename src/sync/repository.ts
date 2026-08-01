@@ -115,12 +115,15 @@ export class GroupSyncRepository {
   }
 
   listGroups(): Group[] {
-    return [...this.documents.values()].map(documentToGroup).sort((a, b) => a.name.localeCompare(b.name));
+    return [...this.documents.values()]
+      .filter(document => !document.group.deletedAt)
+      .map(documentToGroup)
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   getGroup(groupId: string) {
     const document = this.documents.get(groupId);
-    return document ? documentToGroup(document) : undefined;
+    return document && !document.group.deletedAt ? documentToGroup(document) : undefined;
   }
 
   subscribeToLocalChanges(listener: (groupId: string) => void) {
@@ -168,6 +171,20 @@ export class GroupSyncRepository {
       const document = Automerge.from<GroupDocument>(groupToDocument(group, this.deviceId), { actor: this.deviceId });
       await this.persist(id, document);
       return documentToGroup(document);
+    });
+  }
+
+  /**
+   * Retain a CRDT tombstone so a later manual sync cannot resurrect the group.
+   * Deleted documents remain available to the sync transport solely to propagate
+   * that deletion to a device the user explicitly syncs with.
+   */
+  async removeGroup(groupId: string) {
+    return this.mutate(groupId, draft => {
+      const timestamp = now();
+      draft.group.deletedAt = timestamp;
+      draft.group.updatedAt = timestamp;
+      draft.group.updatedBy = this.deviceId;
     });
   }
 
