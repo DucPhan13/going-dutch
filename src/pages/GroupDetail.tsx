@@ -21,6 +21,7 @@ const GroupDetail = () => {
   const {
     selectGroup,
     currentGroup,
+    removeGroup,
     addMember,
     editMember,
     removeMember,
@@ -38,7 +39,7 @@ const GroupDetail = () => {
   const [editedMemberName, setEditedMemberName] = useState('');
 
   const [deleteConfirmDialogOpen, setDeleteConfirmDialogOpen] = useState(false);
-  const [deleteItemType, setDeleteItemType] = useState<'member' | 'expense' | null>(null);
+  const [deleteItemType, setDeleteItemType] = useState<'group' | 'member' | 'expense' | null>(null);
   const [deleteItemId, setDeleteItemId] = useState<string | null>(null);
   const [deleteItemName, setDeleteItemName] = useState('');
 
@@ -83,16 +84,19 @@ const GroupDetail = () => {
     }
   };
 
-  const openDeleteConfirmDialog = (type: 'member' | 'expense', id: string, name: string) => {
+  const openDeleteConfirmDialog = (type: 'group' | 'member' | 'expense', id: string, name: string) => {
     setDeleteItemType(type);
     setDeleteItemId(id);
     setDeleteItemName(name);
     setDeleteConfirmDialogOpen(true);
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (!deleteItemId || !deleteItemType) return;
-    if (deleteItemType === 'member') {
+    if (deleteItemType === 'group') {
+      const removed = await removeGroup(deleteItemId);
+      if (removed) navigate('/');
+    } else if (deleteItemType === 'member') {
       removeMember(deleteItemId);
     } else if (deleteItemType === 'expense') {
       removeExpense(deleteItemId);
@@ -117,6 +121,7 @@ const GroupDetail = () => {
         <div className="flex shrink-0 gap-2">
           <Button onClick={() => setSyncDialogOpen(true)} variant="outline" className="gap-2 border-border"><HardDrive className="h-4 w-4" /><span className="hidden sm:inline">Sync</span></Button>
           <Button onClick={() => navigate(`/group/${currentGroup.id}/settle-up`)} variant="outline" className="gap-2 border-border"><WalletCards className="h-4 w-4" /><span className="hidden sm:inline">Settle up</span></Button>
+          <Button onClick={() => openDeleteConfirmDialog('group', currentGroup.id, currentGroup.name)} variant="outline" className="gap-2 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive" aria-label={`Remove ${currentGroup.name}`}><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">Remove</span></Button>
         </div>
       </div>
       {/* Summary Grid */}
@@ -344,11 +349,16 @@ const GroupDetail = () => {
                 Note: You cannot delete members that are part of expenses.
               </p>
             )}
+            {deleteItemType === 'group' && (
+              <p className="text-sm text-muted-foreground mt-2">
+                This removes the group, expenses, and payments from this device. Copies on other devices stay unchanged until you explicitly sync the deletion.
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteConfirmDialogOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDeleteConfirm}>
-              Delete
+            <Button variant="destructive" onClick={() => void handleDeleteConfirm()}>
+              {deleteItemType === 'group' ? 'Remove group' : 'Delete'}
             </Button>
           </DialogFooter>
         </DialogContent>
