@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Copy, Loader2, QrCode, ScanLine, Smartphone, Wifi } from "lucide-react";
+import { AlertTriangle, Check, Copy, Loader2, QrCode, ScanLine, Smartphone, Wifi } from "lucide-react";
 import { QRCodeSVG } from "@rc-component/qrcode";
 import { useGroupContext } from "@/contexts/GroupContext";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -8,6 +8,21 @@ import { nearbyPairingUrl } from "@/sync/nearby";
 import { cloudPairingUrl } from "@/sync/cloud";
 
 const SUCCESS_DISMISS_MS = 1_500;
+
+interface SyncSupport {
+  supported: boolean;
+  missing: string[];
+}
+
+function checkSyncSupport(): SyncSupport {
+  const missing = [
+    !window.isSecureContext && "secure context (HTTPS)",
+    !("indexedDB" in window) && "IndexedDB",
+    !("crypto" in window) && "Web Crypto",
+    !("RTCPeerConnection" in window) && "WebRTC",
+  ].filter(Boolean) as string[];
+  return { supported: missing.length === 0, missing };
+}
 
 interface NearbySyncPanelProps {
   groupId: string;
@@ -20,6 +35,9 @@ export function NearbySyncPanel({ groupId, groupName, onComplete }: NearbySyncPa
   const [offer, setOffer] = useState<string>();
   const [copied, setCopied] = useState(false);
   const [cloudCode, setCloudCode] = useState<string>();
+  const [syncSupport, setSyncSupport] = useState<SyncSupport | null>(null);
+
+  useEffect(() => setSyncSupport(checkSyncSupport()), []);
 
   useEffect(() => {
     if (nearbySync.status !== "complete") return;
@@ -51,7 +69,8 @@ export function NearbySyncPanel({ groupId, groupName, onComplete }: NearbySyncPa
   return (
     <section className="space-y-4 rounded-xl border border-border bg-muted/20 p-4" aria-live="polite">
       <div className="flex gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10"><Wifi className="h-5 w-5 text-emerald-400" /></div><div><h3 className="font-medium">Sync nearby</h3><p className="mt-1 text-sm text-muted-foreground">Transfer <span className="text-foreground">{groupName}</span> directly over the same Wi-Fi. Cloudflare only coordinates the connection; group data stays peer-to-peer.</p></div></div>
-      {!offer && !active && <Button type="button" onClick={() => void start()} className="app-button-primary w-full gap-2"><QrCode className="h-4 w-4" />Create nearby pairing QR</Button>}
+      {syncSupport && !syncSupport.supported && <Alert className="border-amber-500/40"><AlertTriangle className="h-4 w-4 text-amber-400" /><AlertTitle>Nearby sync may not work in this browser</AlertTitle><AlertDescription>This browser is missing {syncSupport.missing.join(", ")}. Use encrypted Export and Import below to move or back up this group.</AlertDescription></Alert>}
+      {!offer && !active && <Button type="button" onClick={() => void start()} disabled={syncSupport?.supported === false} className="app-button-primary w-full gap-2"><QrCode className="h-4 w-4" />Create nearby pairing QR</Button>}
       {offer && nearbySync.status === "awaiting-peer" && <div className="space-y-3"><div className="mx-auto w-fit rounded-2xl bg-white p-3"><QRCodeSVG value={nearbyPairingUrl(offer)} size={208} level="M" marginSize={3} bgColor="#ffffff" fgColor="#11181c" title="Scan to join this Going Dutch nearby sync" /></div><div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-4 text-center font-mono text-4xl font-semibold tracking-[0.28em] text-emerald-300">{offer}</div><p className="text-center text-sm text-muted-foreground">Scan the QR code or enter this six-digit code on the other device. It expires in 60 seconds.</p><Button type="button" variant="outline" onClick={() => void copy()} className="w-full gap-2">{copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}{copied ? "Pairing link copied" : "Copy pairing link"}</Button></div>}
       {active && !awaitingPeer && <Alert><Loader2 className="h-4 w-4 animate-spin" /><AlertTitle>{nearbySync.status === "merging" ? "Merging changes" : "Sync in progress"}</AlertTitle><AlertDescription>{nearbySync.detail}</AlertDescription></Alert>}
       {nearbySync.status === "complete" && <Alert className="border-emerald-500/40"><Check className="h-4 w-4 text-emerald-400" /><AlertTitle>Nearby sync complete</AlertTitle><AlertDescription>{nearbySync.detail}</AlertDescription></Alert>}

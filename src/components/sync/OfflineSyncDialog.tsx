@@ -160,7 +160,7 @@ export default function OfflineSyncDialog({ groupId, groupName, open, onOpenChan
             <Alert>
               <Upload className="h-4 w-4" />
               <AlertTitle>Merge, not overwrite</AlertTitle>
-              <AlertDescription>A matching group is merged with this device. A different group is added.</AlertDescription>
+              <AlertDescription>A matching group is merged with this device. A different group is added. Concurrent edits to the same field are stopped for manual resolution; neither change is overwritten.</AlertDescription>
             </Alert>
             <div className="space-y-2">
               <Label htmlFor="sync-import-file">Encrypted sync file</Label>

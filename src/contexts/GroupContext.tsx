@@ -6,6 +6,8 @@ import { GroupSyncRepository } from "@/sync/repository";
 import type { ExportGroupArchiveResult, ImportGroupArchiveResult } from "@/sync/types";
 import { NearbySyncSession, readNearbyPairingFragment, type NearbySyncState } from "@/sync/nearby";
 import { CloudTransferSession, readCloudPairingFragment, type CloudSyncState } from "@/sync/cloud";
+import { parseVndAmount } from "@/lib/money";
+import { calculateSettlementBalances } from "@/lib/balances";
 
 interface GroupContextType {
   groups: Group[];
@@ -28,7 +30,8 @@ interface GroupContextType {
   removeExpense: (id: string) => void;
   calculateBalances: () => Balance[];
   markBalanceAsPaid: (balance: Balance, paymentMethod?: string) => void;
-  clearTransactions: () => void;
+  clearTransactions: () => Promise<boolean>;
+  undoClearTransactions: () => void;
   exportGroupArchive: (groupId: string, passphrase: string) => Promise<ExportGroupArchiveResult>;
   importGroupArchive: (file: Blob, passphrase: string) => Promise<ImportGroupArchiveResult>;
   createNearbyOffer: (groupId: string) => Promise<string>;
@@ -45,6 +48,11 @@ interface GroupContextType {
 const GroupContext = createContext<GroupContextType | undefined>(undefined);
 const repository = new GroupSyncRepository();
 
+function normaliseExpenseAmount(expense: Omit<Expense, "id">): Omit<Expense, "id"> | null {
+  const amount = parseVndAmount(expense.amount);
+  return amount === null ? null : { ...expense, amount };
+}
+
 export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [currentGroupId, setCurrentGroupId] = useState<string | null>(null);
@@ -56,6 +64,7 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [cloudSync, setCloudSync] = useState<CloudSyncState>({ status: "idle", detail: "Cloud transfer is ready when needed." });
   const [pendingCloudPair, setPendingCloudPair] = useState<string>();
   const cloudClient = useRef<CloudTransferSession | null>(null);
+  const lastClearedTransactions = useRef<{ groupId: string; transactionIds: string[]; expiresAt: number }>();
   const { toast } = useToast();
 
   const refreshGroups = useCallback(() => setGroups(repository.listGroups()), []);
@@ -160,15 +169,17 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addExpense = (expenseData: Omit<Expense, "id">) => {
     if (!currentGroup) return toast({ title: "Error", description: "No group selected.", variant: "destructive" });
-    if (expenseData.amount <= 0) return toast({ title: "Error", description: "Expense amount must be positive.", variant: "destructive" });
-    const expense: Expense = { id: uuidv4(), ...expenseData };
-    run(repository.addExpense(currentGroup.id, expense), { title: "Expense added", description: `${expense.description} (${expense.amount.toFixed(2)}) has been added.` });
+    const expense = normaliseExpenseAmount(expenseData);
+    if (!expense) return toast({ title: "Error", description: "Expense amount must be a positive whole VND amount.", variant: "destructive" });
+    const savedExpense: Expense = { id: uuidv4(), ...expense };
+    run(repository.addExpense(currentGroup.id, savedExpense), { title: "Expense added", description: `${savedExpense.description} (${savedExpense.amount.toLocaleString("vi-VN")} đ) has been added.` });
   };
 
   const editExpense = (id: string, expenseData: Omit<Expense, "id">) => {
     if (!currentGroup) return toast({ title: "Error", description: "No group selected.", variant: "destructive" });
-    if (expenseData.amount <= 0) return toast({ title: "Error", description: "Expense amount must be positive.", variant: "destructive" });
-    run(repository.editExpense(currentGroup.id, id, expenseData), { title: "Expense updated", description: `${expenseData.description} (${expenseData.amount.toFixed(2)}) has been updated.` });
+    const expense = normaliseExpenseAmount(expenseData);
+    if (!expense) return toast({ title: "Error", description: "Expense amount must be a positive whole VND amount.", variant: "destructive" });
+    run(repository.editExpense(currentGroup.id, id, expense), { title: "Expense updated", description: `${expense.description} (${expense.amount.toLocaleString("vi-VN")} đ) has been updated.` });
   };
 
   const removeExpense = (id: string) => {
@@ -179,37 +190,7 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const calculateBalances = useCallback((): Balance[] => {
-    if (!currentGroup) return [];
-    const memberBalances: Record<string, number> = Object.fromEntries(currentGroup.members.map(member => [member.id, 0]));
-    currentGroup.expenses.forEach(expense => {
-      memberBalances[expense.paidBy] += expense.amount;
-      const values = expense.splitValues || {};
-      const totalValue = expense.participants.reduce((sum, id) => sum + (values[id] || 0), 0);
-      expense.participants.forEach(participantId => {
-        let share = expense.amount / expense.participants.length;
-        if (expense.splitType === "exact") share = values[participantId] || 0;
-        if (expense.splitType === "percentage" || expense.splitType === "shares" || expense.splitType === "unequal") share = totalValue > 0 ? expense.amount * ((values[participantId] || 0) / totalValue) : share;
-        memberBalances[participantId] -= share;
-      });
-    });
-    const balances: Balance[] = [];
-    const debtors = currentGroup.members.filter(member => memberBalances[member.id] < -0.01);
-    const creditors = currentGroup.members.filter(member => memberBalances[member.id] > 0.01);
-    debtors.forEach(debtor => {
-      let remainingDebt = Math.abs(memberBalances[debtor.id]);
-      for (const creditor of creditors) {
-        if (memberBalances[creditor.id] <= 0.01) continue;
-        const paymentAmount = Math.min(remainingDebt, memberBalances[creditor.id]);
-        if (paymentAmount > 0.01) {
-          const roundedAmount = Math.ceil(paymentAmount / 1000) * 1000;
-          balances.push({ id: uuidv4(), from: debtor.id, to: creditor.id, amount: roundedAmount });
-          remainingDebt -= paymentAmount;
-          memberBalances[creditor.id] -= paymentAmount;
-        }
-        if (remainingDebt < 0.01) break;
-      }
-    });
-    return balances.filter(balance => !currentGroup.transactions.some(tx => tx.originalBalanceId === balance.id || (tx.from === balance.from && tx.to === balance.to && Math.abs(tx.amount - balance.amount) < 1000)));
+    return currentGroup ? calculateSettlementBalances(currentGroup) : [];
   }, [currentGroup]);
 
   const markBalanceAsPaid = (balance: Balance, paymentMethod = "Cash") => {
@@ -222,10 +203,32 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     run(repository.addTransaction(currentGroup.id, transaction), { title: "Transaction created", description: `${balance.amount.toLocaleString("vi-VN")} đ has been recorded.` });
   };
 
-  const clearTransactions = () => {
-    if (!currentGroup) return toast({ title: "Error", description: "No group selected.", variant: "destructive" });
+  const clearTransactions = async () => {
+    if (!currentGroup) {
+      toast({ title: "Error", description: "No group selected.", variant: "destructive" });
+      return false;
+    }
     const count = currentGroup.transactions.length;
-    run(repository.clearTransactions(currentGroup.id), { title: "Transaction history cleared", description: `${count} transaction${count !== 1 ? "s" : ""} cleared successfully.` });
+    const cleared = { groupId: currentGroup.id, transactionIds: currentGroup.transactions.map(transaction => transaction.id), expiresAt: Date.now() + 10_000 };
+    try {
+      await repository.clearTransactions(currentGroup.id);
+      lastClearedTransactions.current = cleared;
+      refreshGroups();
+      toast({ title: "Transaction history cleared", description: `Undo is available for 10 seconds. ${count} transaction${count !== 1 ? "s" : ""} cleared successfully.` });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to clear payments.";
+      setSyncError(message);
+      toast({ title: "Could not clear payments", description: message, variant: "destructive" });
+      return false;
+    }
+  };
+
+  const undoClearTransactions = () => {
+    const cleared = lastClearedTransactions.current;
+    if (!cleared || cleared.expiresAt < Date.now()) return toast({ title: "Undo unavailable", description: "The payment-clear undo window has expired.", variant: "destructive" });
+    lastClearedTransactions.current = undefined;
+    run(repository.restoreTransactions(cleared.groupId, cleared.transactionIds), { title: "Payments restored", description: "Recorded payments have been restored." });
   };
 
   const exportGroupArchive = useCallback((groupId: string, passphrase: string) => repository.exportGroupArchive(groupId, passphrase), []);
@@ -272,7 +275,7 @@ export const GroupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   }
 
-  return <GroupContext.Provider value={{ groups, currentGroup, isLoading, syncError, nearbySync, pendingNearbyOffer, cloudSync, cloudTransferAvailable: Boolean(import.meta.env.VITE_CLOUD_SYNC_URL), pendingCloudPair, createGroup, selectGroup, addMember, addMemberToGroup, editMember, removeMember, addExpense, editExpense, removeExpense, calculateBalances, markBalanceAsPaid, clearTransactions, exportGroupArchive, importGroupArchive, createNearbyOffer, acceptNearbyOffer, beginNearbyJoin, cancelNearbySync, clearPendingNearbyOffer, createCloudTransfer, joinCloudTransfer, cancelCloudTransfer, clearPendingCloudPair }}>{children}</GroupContext.Provider>;
+  return <GroupContext.Provider value={{ groups, currentGroup, isLoading, syncError, nearbySync, pendingNearbyOffer, cloudSync, cloudTransferAvailable: Boolean(import.meta.env.VITE_CLOUD_SYNC_URL), pendingCloudPair, createGroup, selectGroup, addMember, addMemberToGroup, editMember, removeMember, addExpense, editExpense, removeExpense, calculateBalances, markBalanceAsPaid, clearTransactions, undoClearTransactions, exportGroupArchive, importGroupArchive, createNearbyOffer, acceptNearbyOffer, beginNearbyJoin, cancelNearbySync, clearPendingNearbyOffer, createCloudTransfer, joinCloudTransfer, cancelCloudTransfer, clearPendingCloudPair }}>{children}</GroupContext.Provider>;
 };
 
 export const useGroupContext = () => {

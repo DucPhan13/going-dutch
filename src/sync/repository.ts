@@ -2,7 +2,9 @@ import * as Automerge from "@automerge/automerge/slim";
 import automergeWasmUrl from "@automerge/automerge/automerge.wasm?url";
 import type { Expense, Group, Member, Transaction } from "@/types";
 import { archiveBase64ToBytes, archiveBytesToBase64, decryptArchive, encryptArchive } from "./archive";
+import { toCalendarDate } from "@/lib/calendar-date";
 import { documentToGroup, groupToDocument, validateDocument, validateLegacyGroup } from "./schema";
+import { findLedgerConflicts, type ConflictLookup } from "./conflicts";
 import { loadStoredDocuments, migrationComplete, saveMigration, saveStoredDocument } from "./storage";
 import {
   type ExportGroupArchiveResult,
@@ -21,6 +23,24 @@ type MutableDocument = GroupDocument;
 const now = () => new Date().toISOString();
 const temporaryActorId = () => crypto.randomUUID().replace(/-/g, "");
 const withoutUndefined = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+function migrateDocumentDates(document: Automerge.Doc<GroupDocument>) {
+  const datesNeedingMigration = Object.values(document.expensesById).some(expense => expense.date && toCalendarDate(expense.date) !== expense.date);
+  if (!datesNeedingMigration) return document;
+  return Automerge.change(document, draft => {
+    for (const expense of Object.values(draft.expensesById)) {
+      if (!expense.date) continue;
+      const date = toCalendarDate(expense.date);
+      if (date) expense.date = date;
+    }
+  });
+}
+
+function requireConflictResolution(document: Automerge.Doc<GroupDocument>) {
+  const conflicts = findLedgerConflicts(document, Automerge.getConflicts as unknown as ConflictLookup);
+  if (!conflicts.length) return;
+  throw new SyncError("sync-conflict", `Concurrent edits need resolution before this group can merge (${conflicts.slice(0, 3).join(", ")}${conflicts.length > 3 ? ", …" : ""}).`);
+}
 
 function getDeviceId() {
   let id = localStorage.getItem(DEVICE_ID_KEY);
@@ -75,9 +95,13 @@ export class GroupSyncRepository {
 
       const stored = await loadStoredDocuments();
       for (const record of stored) {
-        const document = Automerge.load<GroupDocument>(record.data, { actor: this.deviceId });
+        const loadedDocument = Automerge.load<GroupDocument>(record.data, { actor: this.deviceId });
+        const document = migrateDocumentDates(loadedDocument);
         validateDocument(document);
         this.documents.set(document.group.id, document);
+        if (document !== loadedDocument) {
+          await saveStoredDocument(document.group.id, Automerge.save(document));
+        }
       }
       this.initialized = true;
     } catch (error) {
@@ -120,7 +144,7 @@ export class GroupSyncRepository {
     this.requireReady();
     let imported: Automerge.Doc<GroupDocument>;
     try {
-      imported = Automerge.load<GroupDocument>(data, { actor: temporaryActorId() });
+      imported = migrateDocumentDates(Automerge.load<GroupDocument>(data, { actor: temporaryActorId() }));
       validateDocument(imported);
     } catch (error) {
       if (error instanceof SyncError) throw error;
@@ -130,6 +154,7 @@ export class GroupSyncRepository {
     return this.serialise(groupId, async () => {
       const existing = this.documents.get(groupId);
       const merged = existing ? Automerge.merge(existing, imported) : imported;
+      requireConflictResolution(merged);
       validateDocument(merged);
       await this.persist(groupId, merged, false);
       return { group: documentToGroup(merged), heads: Automerge.getHeads(merged).sort() };
@@ -225,6 +250,19 @@ export class GroupSyncRepository {
     });
   }
 
+  async restoreTransactions(groupId: string, transactionIds: string[]) {
+    return this.mutate(groupId, draft => {
+      const timestamp = now();
+      for (const transactionId of transactionIds) {
+        const transaction = draft.transactionsById[transactionId];
+        if (!transaction?.deletedAt) continue;
+        delete transaction.deletedAt;
+        transaction.updatedAt = timestamp;
+        transaction.updatedBy = this.deviceId;
+      }
+    });
+  }
+
   async exportGroupArchive(groupId: string, passphrase: string): Promise<ExportGroupArchiveResult> {
     this.requireReady();
     await this.waitForWrites(groupId);
@@ -250,7 +288,7 @@ export class GroupSyncRepository {
       // Imported history needs a temporary actor handle before it is merged
       // into the local document. CRDT actor ids are anonymous and the entire
       // archive, including its history, is encrypted.
-      imported = Automerge.load<GroupDocument>(archiveBase64ToBytes(payload.document), { actor: temporaryActorId() });
+      imported = migrateDocumentDates(Automerge.load<GroupDocument>(archiveBase64ToBytes(payload.document), { actor: temporaryActorId() }));
       validateDocument(imported);
     } catch (error) {
       if (error instanceof SyncError) throw error;
@@ -261,6 +299,7 @@ export class GroupSyncRepository {
     return this.serialise(imported.group.id, async () => {
       const existing = this.documents.get(imported.group.id);
       const merged = existing ? Automerge.merge(existing, imported) : imported;
+      requireConflictResolution(merged);
       validateDocument(merged);
       await this.persist(imported.group.id, merged);
       const group = documentToGroup(merged);
