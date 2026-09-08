@@ -12,13 +12,13 @@ interface HeaderProps {
 }
 
 export default function Header({ title, showBack = false, backTo = '/' }: HeaderProps) {
-  const { t } = usePreferences();
+  const { language, setLanguage, t } = usePreferences();
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-xl">
       <div className="container mx-auto max-w-4xl px-4 sm:px-6">
         <div className="flex h-16 items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             {showBack && (
               <Link to={backTo}>
                 <Button
@@ -31,14 +31,39 @@ export default function Header({ title, showBack = false, backTo = '/' }: Header
                 </Button>
               </Link>
             )}
-            <Link to="/" className="text-base font-semibold tracking-tight text-foreground">{title}</Link>
+            <Link to="/" className="truncate text-base font-semibold tracking-tight text-foreground">{title}</Link>
           </div>
           <nav className="hidden items-center gap-1 sm:flex" aria-label="Primary navigation">
             <NavLink to="/" end className={({isActive}) => `rounded-lg px-3 py-2 text-sm font-medium ${isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{t('groups')}</NavLink>
             <NavLink to="/friends" className={({isActive}) => `rounded-lg px-3 py-2 text-sm font-medium ${isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{t('friends')}</NavLink>
             <NavLink to="/activity" className={({isActive}) => `rounded-lg px-3 py-2 text-sm font-medium ${isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{t('activity')}</NavLink>
           </nav>
-          <PreferencesMenu />
+          <div className="flex shrink-0 items-center gap-2">
+            <div
+              aria-label={t('language')}
+              className="inline-flex items-center rounded-[var(--radius-pill)] border border-border bg-secondary/70 p-0.5 text-xs font-semibold"
+              role="group"
+            >
+              <button
+                aria-pressed={language === 'en'}
+                className={`h-11 min-w-11 rounded-[calc(var(--radius-pill)-0.25rem)] px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${language === 'en' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setLanguage('en')}
+                type="button"
+              >
+                EN
+              </button>
+              <span aria-hidden="true" className="select-none text-muted-foreground/50">|</span>
+              <button
+                aria-pressed={language === 'vi'}
+                className={`h-11 min-w-11 rounded-[calc(var(--radius-pill)-0.25rem)] px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${language === 'vi' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setLanguage('vi')}
+                type="button"
+              >
+                VI
+              </button>
+            </div>
+            <PreferencesMenu />
+          </div>
         </div>
       </div>
     </header>
