@@ -2,6 +2,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import Header from './Header';
 import { CircleDollarSign, House, Users } from 'lucide-react';
+import { usePreferences } from '@/contexts/PreferencesContext';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -11,10 +12,11 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, title, showBack, backTo }: LayoutProps) {
+  const { t } = usePreferences();
   const navItems = [
-    { to: '/', label: 'Home', icon: House },
-    { to: '/friends', label: 'Friends', icon: Users },
-    { to: '/activity', label: 'Activity', icon: CircleDollarSign },
+    { to: '/', label: t('home'), icon: House },
+    { to: '/friends', label: t('friends'), icon: Users },
+    { to: '/activity', label: t('activity'), icon: CircleDollarSign },
   ];
   return (
     <div className="min-h-screen flex flex-col bg-background">

@@ -10,6 +10,7 @@
   },
   "include": [
     "src/lib/money.ts",
+    "src/lib/preferences.ts",
     "src/lib/calendar-date.ts",
     "src/lib/balances.ts",
     "src/types/index.ts",

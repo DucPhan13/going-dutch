@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Check, ArrowRight } from 'lucide-react';
 import Avatar from '@/components/ui/avatar';
+import { usePreferences } from '@/contexts/PreferencesContext';
 
 interface BalancesListProps {
   balances: Balance[];
@@ -11,6 +12,7 @@ interface BalancesListProps {
 
 const BalancesList = ({ balances }: BalancesListProps) => {
   const { currentGroup, markBalanceAsPaid } = useGroupContext();
+  const { balanceCardDensity, formatVnd, t } = usePreferences();
 
   if (!currentGroup) return null;
 
@@ -22,22 +24,22 @@ const BalancesList = ({ balances }: BalancesListProps) => {
     <div className="space-y-3">
       {balances.length > 0 ? (
         balances.map((balance) => (
-          <Card key={balance.id} className="glass-card">
+          <Card key={balance.id} className="glass-card" data-density={balanceCardDensity}>
             <CardContent className="p-4 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
+                {balanceCardDensity === 'expanded' && <div className="flex items-center gap-1.5">
                   <Avatar name={getMemberName(balance.from)} className="w-9 h-9" />
                   <ArrowRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                   <Avatar name={getMemberName(balance.to)} className="w-9 h-9" />
-                </div>
+                </div>}
                 <div className="min-w-0">
                   <p className="text-sm text-muted-foreground truncate">
                     <span className="font-medium text-foreground">{getMemberName(balance.from)}</span>
-                    {' '} owes{' '}
+                    {' '}{t('owes')}{' '}
                     <span className="font-medium text-foreground">{getMemberName(balance.to)}</span>
                   </p>
                   <p className="amount text-lg font-semibold balance-negative">
-                    {balance.amount.toLocaleString('vi-VN')} đ
+                    {formatVnd(balance.amount)}
                   </p>
                 </div>
               </div>
@@ -47,7 +49,7 @@ const BalancesList = ({ balances }: BalancesListProps) => {
                 size="sm"
               >
                 <Check className="w-4 h-4" />
-                <span className="hidden sm:inline">Mark paid</span>
+                <span className="hidden sm:inline">{t('markPaid')}</span>
               </Button>
             </CardContent>
           </Card>
@@ -55,8 +57,8 @@ const BalancesList = ({ balances }: BalancesListProps) => {
       ) : (
         <div className="text-center py-10">
           <Check className="w-10 h-10 mx-auto mb-3 balance-positive" />
-          <p className="text-foreground font-medium">All settled up</p>
-          <p className="text-sm text-muted-foreground mt-1">No outstanding balances.</p>
+          <p className="text-foreground font-medium">{t('allSettled')}</p>
+          <p className="text-sm text-muted-foreground mt-1">{t('noOutstanding')}</p>
         </div>
       )}
     </div>

@@ -14,6 +14,7 @@ import Avatar from '@/components/ui/avatar';
 import { Plus, Edit2, Trash2, UserPlus, ReceiptText, TrendingUp, Users, WalletCards, HardDrive } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
+import { usePreferences } from '@/contexts/PreferencesContext';
 
 const GroupDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -29,6 +30,7 @@ const GroupDetail = () => {
     calculateBalances,
   } = useGroupContext();
   const { toast } = useToast();
+  const { t, formatVnd } = usePreferences();
 
   const [newMemberName, setNewMemberName] = useState('');
   const [activeTab, setActiveTab] = useState('expenses');
@@ -51,15 +53,15 @@ const GroupDetail = () => {
 
   if (!currentGroup) {
     return (
-      <Layout title="Group Not Found" showBack>
+      <Layout title={t('groupNotFound')} showBack>
         <div className="empty-state">
           <div className="w-20 h-20 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-6">
             <ReceiptText className="w-10 h-10 text-muted-foreground" />
           </div>
-          <h2 className="text-xl font-semibold mb-2 text-foreground">Group not found</h2>
-          <p className="text-muted-foreground mb-6">The group you're looking for doesn't exist.</p>
+          <h2 className="text-xl font-semibold mb-2 text-foreground">{t('groupNotFound')}</h2>
+          <p className="text-muted-foreground mb-6">{t('groupMissing')}</p>
           <Button onClick={() => navigate('/')} variant="outline">
-            Go to Dashboard
+            {t('dashboard')}
           </Button>
         </div>
       </Layout>
@@ -117,11 +119,11 @@ const GroupDetail = () => {
   return (
     <Layout title={currentGroup.name} showBack>
       <div className="mb-6 flex items-end justify-between gap-4">
-        <div><p className="section-label mb-1">Group workspace</p><h2 className="text-2xl font-semibold tracking-tight">{currentGroup.name}</h2></div>
+        <div><p className="section-label mb-1">{t('groupWorkspace')}</p><h2 className="text-2xl font-semibold tracking-tight">{currentGroup.name}</h2></div>
         <div className="flex shrink-0 gap-2">
-          <Button onClick={() => setSyncDialogOpen(true)} variant="outline" className="gap-2 border-border"><HardDrive className="h-4 w-4" /><span className="hidden sm:inline">Sync</span></Button>
-          <Button onClick={() => navigate(`/group/${currentGroup.id}/settle-up`)} variant="outline" className="gap-2 border-border"><WalletCards className="h-4 w-4" /><span className="hidden sm:inline">Settle up</span></Button>
-          <Button onClick={() => openDeleteConfirmDialog('group', currentGroup.id, currentGroup.name)} variant="outline" className="gap-2 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive" aria-label={`Remove ${currentGroup.name}`}><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">Remove</span></Button>
+          <Button onClick={() => setSyncDialogOpen(true)} variant="outline" className="gap-2 border-border"><HardDrive className="h-4 w-4" /><span className="hidden sm:inline">{t('sync')}</span></Button>
+          <Button onClick={() => navigate(`/group/${currentGroup.id}/settle-up`)} variant="outline" className="gap-2 border-border"><WalletCards className="h-4 w-4" /><span className="hidden sm:inline">{t('settleUp')}</span></Button>
+          <Button onClick={() => openDeleteConfirmDialog('group', currentGroup.id, currentGroup.name)} variant="outline" className="gap-2 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive" aria-label={`${t('remove')} ${currentGroup.name}`}><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">{t('remove')}</span></Button>
         </div>
       </div>
       {/* Summary Grid */}
@@ -133,11 +135,10 @@ const GroupDetail = () => {
               <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
                 <TrendingUp className="w-4 h-4 text-emerald-400" />
               </div>
-              <p className="text-xs text-muted-foreground font-medium">Total spent</p>
+              <p className="text-xs text-muted-foreground font-medium">{t('totalSpent')}</p>
             </div>
             <p className="text-3xl font-bold text-emerald-400 font-mono tracking-tight tabular-nums">
-              {totalExpenses.toLocaleString('vi-VN')}
-              <span className="text-lg text-emerald-500/60 ml-1.5">đ</span>
+              {formatVnd(totalExpenses)}
             </p>
           </div>
           <div className="text-right hidden sm:block">
@@ -151,7 +152,7 @@ const GroupDetail = () => {
             <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
               <Users className="w-4 h-4 text-indigo-400" />
             </div>
-            <p className="text-xs text-muted-foreground font-medium">Members</p>
+            <p className="text-xs text-muted-foreground font-medium">{t('members')}</p>
           </div>
           <div className="flex items-center gap-2">
             <p className="text-3xl font-bold text-foreground">{currentGroup.members.length}</p>
@@ -173,12 +174,11 @@ const GroupDetail = () => {
                 outstandingBalances > 0 ? 'text-amber-400' : 'text-emerald-400'
               }`} />
             </div>
-            <p className="text-xs text-muted-foreground font-medium">Owed</p>
+            <p className="text-xs text-muted-foreground font-medium">{t('owed')}</p>
           </div>
           {outstandingBalances > 0 ? (
             <p className="text-2xl font-bold text-amber-400 font-mono tabular-nums">
-              {outstandingBalances.toLocaleString('vi-VN')}
-              <span className="text-sm text-amber-500/60 ml-1">đ</span>
+              {formatVnd(outstandingBalances)}
             </p>
           ) : (
             <p className="text-lg font-semibold text-emerald-400">All settled</p>
@@ -189,9 +189,9 @@ const GroupDetail = () => {
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
         <TabsList className="grid w-full grid-cols-3 mb-6">
-          <TabsTrigger value="expenses">Expenses</TabsTrigger>
-          <TabsTrigger value="members">Members</TabsTrigger>
-          <TabsTrigger value="balances">Balances</TabsTrigger>
+          <TabsTrigger value="expenses">{t('expenses')}</TabsTrigger>
+          <TabsTrigger value="members">{t('members')}</TabsTrigger>
+          <TabsTrigger value="balances">{t('balances')}</TabsTrigger>
         </TabsList>
 
         {/* Expenses Tab */}
@@ -199,9 +199,9 @@ const GroupDetail = () => {
           {currentGroup.members.length === 0 ? (
             <div className="text-center py-10">
               <UserPlus className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-              <p className="text-muted-foreground mb-4">Add members to start tracking expenses</p>
+              <p className="text-muted-foreground mb-4">{t('addMembers')}.</p>
               <Button onClick={() => setActiveTab('members')} variant="outline">
-                <UserPlus className="mr-2 h-4 w-4" /> Add members
+                <UserPlus className="mr-2 h-4 w-4" /> {t('addMembers')}
               </Button>
             </div>
           ) : currentGroup.expenses.length > 0 ? (
@@ -211,7 +211,7 @@ const GroupDetail = () => {
                   onClick={() => navigate(`/group/${currentGroup.id}/add-expense`)}
                   className="bg-emerald-500 hover:bg-emerald-600 text-white gap-2 active:scale-[0.98]"
                 >
-                  <Plus className="w-4 h-4" /> Add expense
+                  <Plus className="w-4 h-4" /> {t('addExpense')}
                 </Button>
               </div>
               {currentGroup.expenses.map((expense) => (
@@ -227,12 +227,12 @@ const GroupDetail = () => {
           ) : (
             <div className="text-center py-10">
               <ReceiptText className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-              <p className="text-muted-foreground mb-4">No expenses yet</p>
+              <p className="text-muted-foreground mb-4">{t('noExpensesYet')}</p>
               <Button
                 onClick={() => navigate(`/group/${currentGroup.id}/add-expense`)}
                 className="bg-emerald-500 hover:bg-emerald-600 text-white gap-2 active:scale-[0.98]"
               >
-                <Plus className="w-4 h-4" /> Add first expense
+                <Plus className="w-4 h-4" /> {t('addFirstExpense')}
               </Button>
             </div>
           )}
@@ -291,7 +291,7 @@ const GroupDetail = () => {
             </div>
           ) : (
             <div className="text-center py-10 text-muted-foreground">
-              No members yet
+              {t('noMembersYet')}
             </div>
           )}
         </TabsContent>

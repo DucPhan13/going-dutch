@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { GroupProvider } from "@/contexts/GroupContext";
+import { PreferencesProvider } from "@/contexts/PreferencesContext";
 import Dashboard from "@/pages/Dashboard";
 import GroupDetail from "@/pages/GroupDetail";
 import CreateGroup from "@/pages/CreateGroup";
@@ -20,6 +21,7 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
+      <PreferencesProvider>
       <GroupProvider>
         <Toaster />
         <Sonner />
@@ -38,6 +40,7 @@ const App = () => (
           </Routes>
         </BrowserRouter>
       </GroupProvider>
+      </PreferencesProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );
