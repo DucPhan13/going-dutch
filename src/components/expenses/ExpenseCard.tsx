@@ -23,7 +23,7 @@ const ExpenseCard = ({ expense, members, onEdit, onDelete }: ExpenseCardProps) =
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 min-w-0 flex-1">
-            <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <div className="icon-tile flex h-10 w-10 shrink-0 items-center justify-center mt-0.5">
               <Icon className="w-4 h-4 text-muted-foreground" />
             </div>
             <div className="min-w-0">
@@ -53,7 +53,7 @@ const ExpenseCard = ({ expense, members, onEdit, onDelete }: ExpenseCardProps) =
                 variant="ghost"
                 size="icon"
                 onClick={onEdit}
-                className="h-8 w-8 hover:bg-white/5 text-muted-foreground hover:text-foreground"
+                className="h-10 w-10 hover:bg-accent text-muted-foreground hover:text-foreground"
                 aria-label="Edit expense"
               >
                 <Edit2 className="h-3.5 w-3.5" />
@@ -61,7 +61,7 @@ const ExpenseCard = ({ expense, members, onEdit, onDelete }: ExpenseCardProps) =
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-950/50"
+                className="h-10 w-10 text-destructive hover:bg-destructive/10 hover:text-destructive"
                 onClick={onDelete}
                 aria-label="Delete expense"
               >

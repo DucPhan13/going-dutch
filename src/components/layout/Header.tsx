@@ -41,12 +41,12 @@ export default function Header({ title, showBack = false, backTo = '/' }: Header
           <div className="flex shrink-0 items-center gap-2">
             <div
               aria-label={t('language')}
-              className="inline-flex items-center rounded-[var(--radius-pill)] border border-border bg-secondary/70 p-0.5 text-xs font-semibold"
+              className="language-switch inline-flex items-center p-0.5 text-xs font-semibold"
               role="group"
             >
               <button
                 aria-pressed={language === 'en'}
-                className={`h-11 min-w-11 rounded-[calc(var(--radius-pill)-0.25rem)] px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${language === 'en' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className="language-switch-button h-11 min-w-11 px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => setLanguage('en')}
                 type="button"
               >
@@ -55,7 +55,7 @@ export default function Header({ title, showBack = false, backTo = '/' }: Header
               <span aria-hidden="true" className="select-none text-muted-foreground/50">|</span>
               <button
                 aria-pressed={language === 'vi'}
-                className={`h-11 min-w-11 rounded-[calc(var(--radius-pill)-0.25rem)] px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${language === 'vi' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className="language-switch-button h-11 min-w-11 px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => setLanguage('vi')}
                 type="button"
               >

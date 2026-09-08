@@ -11,7 +11,7 @@ import BalancesList from '@/components/balances/BalancesList';
 import TransactionList from '@/components/balances/TransactionList';
 import OfflineSyncDialog from '@/components/sync/OfflineSyncDialog';
 import Avatar from '@/components/ui/avatar';
-import { Plus, Edit2, Trash2, UserPlus, ReceiptText, TrendingUp, Users, WalletCards, HardDrive } from 'lucide-react';
+import { Plus, Edit2, Trash2, UserPlus, ReceiptText, WalletCards, HardDrive } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { usePreferences } from '@/contexts/PreferencesContext';
@@ -126,65 +126,34 @@ const GroupDetail = () => {
           <Button onClick={() => openDeleteConfirmDialog('group', currentGroup.id, currentGroup.name)} variant="outline" className="gap-2 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive" aria-label={`${t('remove')} ${currentGroup.name}`}><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">{t('remove')}</span></Button>
         </div>
       </div>
-      {/* Summary Grid */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        {/* Total Spent — hero tile */}
-        <div className="bento-tile col-span-2 flex items-center justify-between">
+      <section className="app-surface mb-6 overflow-hidden" aria-label={t('groupWorkspace')}>
+        <div className="flex flex-col gap-6 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                <TrendingUp className="w-4 h-4 text-emerald-400" />
-              </div>
-              <p className="text-xs text-muted-foreground font-medium">{t('totalSpent')}</p>
-            </div>
-            <p className="text-3xl font-bold text-emerald-400 font-mono tracking-tight tabular-nums">
-              {formatVnd(totalExpenses)}
-            </p>
+            <p className="section-label mb-2">{t('totalSpent')}</p>
+            <p className="amount text-3xl font-semibold tracking-tight text-foreground">{formatVnd(totalExpenses)}</p>
           </div>
-          <div className="text-right hidden sm:block">
-            <p className="text-xs text-muted-foreground">{currentGroup.expenses.length} expenses</p>
-          </div>
+          <p className="text-sm text-muted-foreground">{currentGroup.expenses.length} expenses</p>
         </div>
-
-        {/* Members */}
-        <div className="bento-tile">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-              <Users className="w-4 h-4 text-indigo-400" />
-            </div>
-            <p className="text-xs text-muted-foreground font-medium">{t('members')}</p>
+        <dl className="grid grid-cols-2 divide-x divide-border border-t border-border">
+          <div className="min-w-0 px-5 py-4 sm:px-6">
+            <dt className="section-label mb-2">{t('members')}</dt>
+            <dd className="flex items-center gap-2 text-xl font-semibold text-foreground">
+              {currentGroup.members.length}
+              <span className="flex -space-x-1.5" aria-label={t('members')}>
+                {currentGroup.members.slice(0, 3).map((member) => (
+                  <Avatar key={member.id} name={member.name} className="h-5 w-5 border border-background text-[9px]" />
+                ))}
+              </span>
+            </dd>
           </div>
-          <div className="flex items-center gap-2">
-            <p className="text-3xl font-bold text-foreground">{currentGroup.members.length}</p>
-            <div className="flex -space-x-1.5 ml-1">
-              {currentGroup.members.slice(0, 3).map((m) => (
-                <Avatar key={m.id} name={m.name} className="w-5 h-5 text-[9px] border border-background" />
-              ))}
-            </div>
+          <div className="min-w-0 px-5 py-4 sm:px-6">
+            <dt className="section-label mb-2">{t('owed')}</dt>
+            <dd className={`amount text-xl font-semibold ${outstandingBalances > 0 ? 'balance-negative' : 'balance-positive'}`}>
+              {outstandingBalances > 0 ? formatVnd(outstandingBalances) : t('allSettled')}
+            </dd>
           </div>
-        </div>
-
-        {/* Outstanding */}
-        <div className="bento-tile">
-          <div className="flex items-center gap-2 mb-3">
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-              outstandingBalances > 0 ? 'bg-amber-500/10' : 'bg-emerald-500/10'
-            }`}>
-              <ReceiptText className={`w-4 h-4 ${
-                outstandingBalances > 0 ? 'text-amber-400' : 'text-emerald-400'
-              }`} />
-            </div>
-            <p className="text-xs text-muted-foreground font-medium">{t('owed')}</p>
-          </div>
-          {outstandingBalances > 0 ? (
-            <p className="text-2xl font-bold text-amber-400 font-mono tabular-nums">
-              {formatVnd(outstandingBalances)}
-            </p>
-          ) : (
-            <p className="text-lg font-semibold text-emerald-400">All settled</p>
-          )}
-        </div>
-      </div>
+        </dl>
+      </section>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
@@ -209,7 +178,7 @@ const GroupDetail = () => {
               <div className="flex justify-end mb-2">
                 <Button
                   onClick={() => navigate(`/group/${currentGroup.id}/add-expense`)}
-                  className="bg-emerald-500 hover:bg-emerald-600 text-white gap-2 active:scale-[0.98]"
+                  className="app-button-primary gap-2 active:scale-[0.98]"
                 >
                   <Plus className="w-4 h-4" /> {t('addExpense')}
                 </Button>
@@ -230,7 +199,7 @@ const GroupDetail = () => {
               <p className="text-muted-foreground mb-4">{t('noExpensesYet')}</p>
               <Button
                 onClick={() => navigate(`/group/${currentGroup.id}/add-expense`)}
-                className="bg-emerald-500 hover:bg-emerald-600 text-white gap-2 active:scale-[0.98]"
+                className="app-button-primary gap-2 active:scale-[0.98]"
               >
                 <Plus className="w-4 h-4" /> {t('addFirstExpense')}
               </Button>
@@ -248,7 +217,7 @@ const GroupDetail = () => {
                 onChange={(e) => setNewMemberName(e.target.value)}
                 className="flex-1"
               />
-              <Button type="submit" className="bg-emerald-500 hover:bg-emerald-600 text-white active:scale-[0.98]">
+              <Button type="submit" className="app-button-primary active:scale-[0.98]">
                 <Plus className="w-4 h-4 sm:mr-1.5" />
                 <span className="hidden sm:inline">Add</span>
               </Button>
@@ -270,7 +239,7 @@ const GroupDetail = () => {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 hover:bg-white/5 text-muted-foreground hover:text-foreground"
+                      className="h-10 w-10 hover:bg-accent text-muted-foreground hover:text-foreground"
                       onClick={() => openEditMemberDialog(member)}
                       aria-label={`Edit ${member.name}`}
                     >
@@ -279,7 +248,7 @@ const GroupDetail = () => {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-950/30"
+                      className="h-10 w-10 text-destructive hover:bg-destructive/10 hover:text-destructive"
                       onClick={() => openDeleteConfirmDialog('member', member.id, member.name)}
                       aria-label={`Delete ${member.name}`}
                     >
@@ -327,7 +296,7 @@ const GroupDetail = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditMemberDialogOpen(false)}>Cancel</Button>
-            <Button className="bg-emerald-500 hover:bg-emerald-600 text-white" onClick={handleEditMember}>Save</Button>
+            <Button className="app-button-primary" onClick={handleEditMember}>Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

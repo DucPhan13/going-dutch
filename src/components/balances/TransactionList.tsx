@@ -36,7 +36,7 @@ const TransactionList = () => {
               variant="outline"
               size="sm"
               onClick={() => setClearPending(true)}
-              className="text-red-400 hover:text-red-300 hover:bg-red-950/30 border-white/10 gap-1.5 h-8"
+              className="h-9 gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
             >
               <Trash2 className="w-3.5 h-3.5" />
               Clear
@@ -75,7 +75,7 @@ const TransactionList = () => {
                 <div
                   key={transaction.id}
                   className={`flex items-center justify-between py-3 ${
-                    i !== currentGroup.transactions.length - 1 ? 'border-b border-white/5' : ''
+                    i !== currentGroup.transactions.length - 1 ? 'border-b border-border' : ''
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -93,7 +93,7 @@ const TransactionList = () => {
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0 ml-3">
-                    <p className="text-sm font-semibold text-emerald-400 font-mono tabular-nums">
+                    <p className="amount text-sm font-semibold text-foreground">
                       {transaction.amount.toLocaleString('vi-VN')} đ
                     </p>
                     <p className="text-[11px] text-muted-foreground">
