@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useGroupContext } from '@/contexts/GroupContext';
 import Layout from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import { usePreferences } from '@/contexts/PreferencesContext';
 
 const GroupDetail = () => {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const {
     selectGroup,
@@ -50,6 +51,12 @@ const GroupDetail = () => {
       selectGroup(id);
     }
   }, [id, selectGroup]);
+
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('view') === 'balances') {
+      setActiveTab('balances');
+    }
+  }, [location.search]);
 
   if (!currentGroup) {
     return (
@@ -118,11 +125,12 @@ const GroupDetail = () => {
 
   return (
     <Layout title={currentGroup.name} showBack>
-      <div className="mb-6 flex items-end justify-between gap-4">
+      <div className="mx-auto max-w-6xl">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div><p className="section-label mb-1">{t('groupWorkspace')}</p><h2 className="text-2xl font-semibold tracking-tight">{currentGroup.name}</h2></div>
-        <div className="flex shrink-0 gap-2">
-          <Button onClick={() => setSyncDialogOpen(true)} variant="outline" className="gap-2 border-border"><HardDrive className="h-4 w-4" /><span className="hidden sm:inline">{t('sync')}</span></Button>
-          <Button onClick={() => navigate(`/group/${currentGroup.id}/settle-up`)} variant="outline" className="gap-2 border-border"><WalletCards className="h-4 w-4" /><span className="hidden sm:inline">{t('settleUp')}</span></Button>
+        <div className="flex shrink-0 self-end gap-2 sm:self-auto">
+          <Button onClick={() => setSyncDialogOpen(true)} variant="outline" className="gap-2 border-border" aria-label={t('sync')}><HardDrive className="h-4 w-4" /><span className="hidden sm:inline">{t('sync')}</span></Button>
+          <Button onClick={() => navigate(`/group/${currentGroup.id}/settle-up`)} variant="outline" className="gap-2 border-border" aria-label={t('settleUp')}><WalletCards className="h-4 w-4" /><span className="hidden sm:inline">{t('settleUp')}</span></Button>
           <Button onClick={() => openDeleteConfirmDialog('group', currentGroup.id, currentGroup.name)} variant="outline" className="gap-2 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive" aria-label={`${t('remove')} ${currentGroup.name}`}><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">{t('remove')}</span></Button>
         </div>
       </div>
@@ -132,16 +140,16 @@ const GroupDetail = () => {
             <p className="section-label mb-2">{t('totalSpent')}</p>
             <p className="amount text-3xl font-semibold tracking-tight text-foreground">{formatVnd(totalExpenses)}</p>
           </div>
-          <p className="text-sm text-muted-foreground">{currentGroup.expenses.length} expenses</p>
+          <p className="text-sm text-muted-foreground">{t('expenseCount', { count: currentGroup.expenses.length })}</p>
         </div>
-        <dl className="grid grid-cols-2 divide-x divide-border border-t border-border">
+        <dl className="grid grid-cols-1 divide-y divide-border border-t border-border sm:grid-cols-2 sm:divide-x sm:divide-y-0">
           <div className="min-w-0 px-5 py-4 sm:px-6">
             <dt className="section-label mb-2">{t('members')}</dt>
             <dd className="flex items-center gap-2 text-xl font-semibold text-foreground">
               {currentGroup.members.length}
               <span className="flex -space-x-1.5" aria-label={t('members')}>
                 {currentGroup.members.slice(0, 3).map((member) => (
-                  <Avatar key={member.id} name={member.name} className="h-5 w-5 border border-background text-[9px]" />
+                  <Avatar key={member.id} name={member.name} className="h-5 w-5 border border-background text-xs" />
                 ))}
               </span>
             </dd>
@@ -166,16 +174,20 @@ const GroupDetail = () => {
         {/* Expenses Tab */}
         <TabsContent value="expenses">
           {currentGroup.members.length === 0 ? (
-            <div className="text-center py-10">
-              <UserPlus className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-              <p className="text-muted-foreground mb-4">{t('addMembers')}.</p>
-              <Button onClick={() => setActiveTab('members')} variant="outline">
-                <UserPlus className="mr-2 h-4 w-4" /> {t('addMembers')}
+            <section className="app-surface px-6 py-10 text-center sm:px-10" aria-labelledby="onboarding-members-title">
+              <div className="icon-tile mx-auto mb-5 grid h-12 w-12 place-items-center">
+                <UserPlus className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <h3 id="onboarding-members-title" className="text-xl font-semibold">{t('onboardingMembersTitle')}</h3>
+              <p className="mx-auto mt-2 max-w-md text-muted-foreground">{t('onboardingMembersBody')}</p>
+              <Button onClick={() => setActiveTab('members')} className="app-button-primary mt-6 gap-2">
+                <UserPlus className="h-4 w-4" /> {t('onboardingMembersAction')}
               </Button>
-            </div>
+            </section>
           ) : currentGroup.expenses.length > 0 ? (
             <div className="space-y-3">
-              <div className="flex justify-end mb-2">
+              <div className="mb-3 flex items-center justify-between gap-4">
+                <h3 className="text-lg font-semibold">{t('expenseCount', { count: currentGroup.expenses.length })}</h3>
                 <Button
                   onClick={() => navigate(`/group/${currentGroup.id}/add-expense`)}
                   className="app-button-primary gap-2 active:scale-[0.98]"
@@ -194,16 +206,16 @@ const GroupDetail = () => {
               ))}
             </div>
           ) : (
-            <div className="text-center py-10">
-              <ReceiptText className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-              <p className="text-muted-foreground mb-4">{t('noExpensesYet')}</p>
-              <Button
-                onClick={() => navigate(`/group/${currentGroup.id}/add-expense`)}
-                className="app-button-primary gap-2 active:scale-[0.98]"
-              >
-                <Plus className="w-4 h-4" /> {t('addFirstExpense')}
+            <section className="app-surface px-6 py-10 text-center sm:px-10" aria-labelledby="onboarding-expense-title">
+              <div className="icon-tile mx-auto mb-5 grid h-12 w-12 place-items-center">
+                <ReceiptText className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <h3 id="onboarding-expense-title" className="text-xl font-semibold">{t('onboardingExpenseTitle')}</h3>
+              <p className="mx-auto mt-2 max-w-md text-muted-foreground">{t('onboardingExpenseBody')}</p>
+              <Button onClick={() => navigate(`/group/${currentGroup.id}/add-expense`)} className="app-button-primary mt-6 gap-2 active:scale-[0.98]">
+                <Plus className="h-4 w-4" /> {t('addFirstExpense')}
               </Button>
-            </div>
+            </section>
           )}
         </TabsContent>
 
@@ -212,14 +224,14 @@ const GroupDetail = () => {
           <Card className="bento-tile mb-6 !p-4">
             <form onSubmit={handleAddMember} className="flex gap-2">
               <Input
-                placeholder="Add members, e.g. Minh, Lan, Tuan"
+                placeholder={t('addMemberPlaceholder')}
                 value={newMemberName}
                 onChange={(e) => setNewMemberName(e.target.value)}
                 className="flex-1"
               />
               <Button type="submit" className="app-button-primary active:scale-[0.98]">
                 <Plus className="w-4 h-4 sm:mr-1.5" />
-                <span className="hidden sm:inline">Add</span>
+                <span className="hidden sm:inline">{t('add')}</span>
               </Button>
             </form>
           </Card>
@@ -241,7 +253,7 @@ const GroupDetail = () => {
                       size="icon"
                       className="h-10 w-10 hover:bg-accent text-muted-foreground hover:text-foreground"
                       onClick={() => openEditMemberDialog(member)}
-                      aria-label={`Edit ${member.name}`}
+                      aria-label={t('editMemberLabel', { name: member.name })}
                     >
                       <Edit2 className="h-3.5 w-3.5" />
                     </Button>
@@ -250,7 +262,7 @@ const GroupDetail = () => {
                       size="icon"
                       className="h-10 w-10 text-destructive hover:bg-destructive/10 hover:text-destructive"
                       onClick={() => openDeleteConfirmDialog('member', member.id, member.name)}
-                      aria-label={`Delete ${member.name}`}
+                      aria-label={t('deleteMember', { name: member.name })}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -269,12 +281,18 @@ const GroupDetail = () => {
         <TabsContent value="balances">
           {currentGroup.expenses.length > 0 ? (
             <>
+              {new URLSearchParams(location.search).get('view') === 'balances' && (
+                <section className="app-surface-strong mb-4 px-5 py-4" aria-labelledby="onboarding-balance-title">
+                  <h3 id="onboarding-balance-title" className="text-xl font-semibold">{t('onboardingBalanceTitle')}</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">{t('onboardingBalanceBody')}</p>
+                </section>
+              )}
               <BalancesList balances={balances} />
               <TransactionList />
             </>
           ) : (
             <div className="text-center py-10 text-muted-foreground">
-              Add some expenses to see the balances
+              {t('balancesEmpty')}
             </div>
           )}
         </TabsContent>
@@ -284,19 +302,19 @@ const GroupDetail = () => {
       <Dialog open={editMemberDialogOpen} onOpenChange={setEditMemberDialogOpen}>
         <DialogContent className="bento-tile !p-6">
           <DialogHeader>
-            <DialogTitle>Edit member</DialogTitle>
+            <DialogTitle>{t('editMember')}</DialogTitle>
           </DialogHeader>
           <div className="py-4">
             <Input
-              placeholder="Member name"
+              placeholder={t('member')}
               value={editedMemberName}
               onChange={(e) => setEditedMemberName(e.target.value)}
               className="w-full"
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditMemberDialogOpen(false)}>Cancel</Button>
-            <Button className="app-button-primary" onClick={handleEditMember}>Save</Button>
+            <Button variant="outline" onClick={() => setEditMemberDialogOpen(false)}>{t('cancel')}</Button>
+            <Button className="app-button-primary" onClick={handleEditMember}>{t('save')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -305,29 +323,20 @@ const GroupDetail = () => {
       <Dialog open={deleteConfirmDialogOpen} onOpenChange={setDeleteConfirmDialogOpen}>
         <DialogContent className="bento-tile !p-6">
           <DialogHeader>
-            <DialogTitle>Confirm delete</DialogTitle>
+            <DialogTitle>{deleteItemType === 'group' ? t('deleteGroupTitle') : deleteItemType === 'member' ? t('deleteMemberTitle', { name: deleteItemName }) : t('deleteExpenseTitle', { description: deleteItemName })}</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <p className="text-foreground">
-              Are you sure you want to delete this {deleteItemType}?
-              <br />
-              <span className="font-medium">{deleteItemName}</span>
-            </p>
+            <p className="text-foreground">{deleteItemType === 'group' ? t('deleteGroupBody', { groupName: deleteItemName }) : deleteItemType === 'member' ? t('deleteMemberBody', { name: deleteItemName }) : t('deleteExpenseBody')}</p>
             {deleteItemType === 'member' && (
               <p className="text-sm text-muted-foreground mt-2">
-                Note: You cannot delete members that are part of expenses.
-              </p>
-            )}
-            {deleteItemType === 'group' && (
-              <p className="text-sm text-muted-foreground mt-2">
-                This removes the group, expenses, and payments from this device. Copies on other devices stay unchanged until you explicitly sync the deletion.
+                {t('memberDeleteWarning')}
               </p>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteConfirmDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeleteConfirmDialogOpen(false)}>{t('cancel')}</Button>
             <Button variant="destructive" onClick={() => void handleDeleteConfirm()}>
-              {deleteItemType === 'group' ? 'Remove group' : 'Delete'}
+              {deleteItemType === 'group' ? t('removeGroup') : deleteItemType === 'member' ? t('removeMember') : t('deleteExpense')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -339,6 +348,7 @@ const GroupDetail = () => {
         open={syncDialogOpen}
         onOpenChange={setSyncDialogOpen}
       />
+      </div>
     </Layout>
   );
 };

@@ -3,9 +3,11 @@ import { useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
+import { usePreferences } from "@/contexts/PreferencesContext";
 
 const NotFound = () => {
   const location = useLocation();
+  const { t } = usePreferences();
 
   useEffect(() => {
     console.error(
@@ -19,11 +21,11 @@ const NotFound = () => {
       <div className="noise-overlay" aria-hidden="true" />
       <div className="relative z-0 text-center animate-fade-in">
         <h1 className="text-7xl font-bold mb-4 text-foreground tracking-tight">404</h1>
-        <p className="text-lg mb-8 text-muted-foreground">Page not found</p>
+        <p className="text-lg mb-8 text-muted-foreground">{t('pageNotFound')}</p>
         <Link to="/">
           <Button className="bg-emerald-500 hover:bg-emerald-600 text-white gap-2 active:scale-[0.98]">
             <ArrowLeft className="w-4 h-4" />
-            Return home
+            {t('returnHome')}
           </Button>
         </Link>
       </div>

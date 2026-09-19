@@ -9,15 +9,16 @@ interface HeaderProps {
   title: string;
   showBack?: boolean;
   backTo?: string;
+  headerActions?: React.ReactNode;
 }
 
-export default function Header({ title, showBack = false, backTo = '/' }: HeaderProps) {
+export default function Header({ title, showBack = false, backTo = '/', headerActions }: HeaderProps) {
   const { language, setLanguage, t } = usePreferences();
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-xl">
-      <div className="container mx-auto max-w-4xl px-4 sm:px-6">
-        <div className="flex h-16 items-center justify-between">
+    <header className="app-header-safe sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-xl">
+      <div className="w-full px-4 sm:px-6">
+        <div className="grid h-16 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center">
           <div className="flex min-w-0 items-center gap-3">
             {showBack && (
               <Link to={backTo}>
@@ -33,12 +34,12 @@ export default function Header({ title, showBack = false, backTo = '/' }: Header
             )}
             <Link to="/" className="truncate text-base font-semibold tracking-tight text-foreground">{title}</Link>
           </div>
-          <nav className="hidden items-center gap-1 sm:flex" aria-label="Primary navigation">
-            <NavLink to="/" end className={({isActive}) => `rounded-lg px-3 py-2 text-sm font-medium ${isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{t('groups')}</NavLink>
-            <NavLink to="/friends" className={({isActive}) => `rounded-lg px-3 py-2 text-sm font-medium ${isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{t('friends')}</NavLink>
-            <NavLink to="/activity" className={({isActive}) => `rounded-lg px-3 py-2 text-sm font-medium ${isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{t('activity')}</NavLink>
+          <nav className="hidden items-center gap-1 md:flex" aria-label="Primary navigation">
+            <NavLink to="/" end className="app-nav-link rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground">{t('groups')}</NavLink>
+            <NavLink to="/friends" className="app-nav-link rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground">{t('friends')}</NavLink>
+            <NavLink to="/activity" className="app-nav-link rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground">{t('activity')}</NavLink>
           </nav>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center justify-self-end gap-2">
             <div
               aria-label={t('language')}
               className="language-switch inline-flex items-center p-0.5 text-xs font-semibold"
@@ -62,6 +63,7 @@ export default function Header({ title, showBack = false, backTo = '/' }: Header
                 VI
               </button>
             </div>
+            {headerActions}
             <PreferencesMenu />
           </div>
         </div>

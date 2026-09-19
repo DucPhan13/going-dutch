@@ -164,10 +164,10 @@ export class GroupSyncRepository {
     });
   }
 
-  async createGroup(id: string, name: string) {
+  async createGroup(id: string, name: string, members: Member[] = []) {
     return this.serialise(id, async () => {
       this.requireReady();
-      const group: Group = { id, name, members: [], expenses: [], transactions: [] };
+      const group: Group = { id, name, members, expenses: [], transactions: [] };
       const document = Automerge.from<GroupDocument>(groupToDocument(group, this.deviceId), { actor: this.deviceId });
       await this.persist(id, document);
       return documentToGroup(document);
@@ -251,6 +251,16 @@ export class GroupSyncRepository {
     return this.mutate(groupId, draft => {
       const timestamp = now();
       draft.transactionsById[transaction.id] = { ...transaction, createdAt: timestamp, updatedAt: timestamp, updatedBy: this.deviceId };
+    });
+  }
+
+  async removeTransaction(groupId: string, transactionId: string) {
+    return this.mutate(groupId, draft => {
+      const transaction = draft.transactionsById[transactionId];
+      if (!transaction || transaction.deletedAt) throw new SyncError("invalid-data", "Payment not found.");
+      transaction.deletedAt = now();
+      transaction.updatedAt = transaction.deletedAt;
+      transaction.updatedBy = this.deviceId;
     });
   }
 

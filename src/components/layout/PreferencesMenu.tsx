@@ -10,7 +10,7 @@ export default function PreferencesMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={t('settings')} className="ml-2 shrink-0 text-muted-foreground hover:text-foreground">
+        <Button variant="ghost" size="icon" aria-label={t('settings')} className="shrink-0 text-muted-foreground hover:text-foreground">
           <Settings className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>

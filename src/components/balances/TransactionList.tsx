@@ -5,9 +5,11 @@ import { Trash2, ArrowDownUp } from 'lucide-react';
 import Avatar from '@/components/ui/avatar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useEffect, useState } from 'react';
+import { usePreferences } from '@/contexts/PreferencesContext';
 
 const TransactionList = () => {
   const { currentGroup, clearTransactions, undoClearTransactions } = useGroupContext();
+  const { t, formatVnd, language } = usePreferences();
   const [clearPending, setClearPending] = useState(false);
   const [undoAvailable, setUndoAvailable] = useState(false);
 
@@ -20,7 +22,7 @@ const TransactionList = () => {
   if (!currentGroup) return null;
 
   const getMemberName = (id: string) => {
-    return currentGroup.members.find((member) => member.id === id)?.name || 'Unknown';
+    return currentGroup.members.find((member) => member.id === id)?.name || t('unknown');
   };
 
   return (
@@ -29,7 +31,7 @@ const TransactionList = () => {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <ArrowDownUp className="w-4 h-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold text-foreground">Transaction history</h3>
+            <h3 className="text-sm font-semibold text-foreground">{t('transactionHistory')}</h3>
           </div>
           {currentGroup.transactions.length > 0 && (
             <Button
@@ -39,19 +41,19 @@ const TransactionList = () => {
               className="h-9 gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              Clear
+              {t('clear')}
             </Button>
           )}
         </div>
 
         {clearPending && (
           <Alert className="mb-4 border-destructive/40">
-            <AlertTitle>Clear all recorded payments?</AlertTitle>
+            <AlertTitle>{t('clearRecordedPayments')}</AlertTitle>
             <AlertDescription className="mt-2 space-y-3">
-              <p>This removes {currentGroup.transactions.length} payment{currentGroup.transactions.length === 1 ? '' : 's'} from this group. Balances will be recalculated as unpaid.</p>
+              <p>{t('clearPaymentsBody', { count: currentGroup.transactions.length })}</p>
               <div className="flex gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setClearPending(false)}>Cancel</Button>
-                <Button type="button" variant="destructive" size="sm" onClick={() => { void clearTransactions().then(cleared => { if (!cleared) return; setClearPending(false); setUndoAvailable(true); }); }}>Clear payments</Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setClearPending(false)}>{t('cancel')}</Button>
+                <Button type="button" variant="destructive" size="sm" onClick={() => { void clearTransactions().then(cleared => { if (!cleared) return; setClearPending(false); setUndoAvailable(true); }); }}>{t('clearPayments')}</Button>
               </div>
             </AlertDescription>
           </Alert>
@@ -59,10 +61,10 @@ const TransactionList = () => {
 
         {undoAvailable && (
           <Alert className="mb-4 border-amber-500/40">
-            <AlertTitle>Payment history cleared</AlertTitle>
+            <AlertTitle>{t('paymentHistoryCleared')}</AlertTitle>
             <AlertDescription className="mt-2 flex items-center justify-between gap-3">
-              <span>Undo is available for 10 seconds.</span>
-              <Button type="button" variant="outline" size="sm" onClick={() => { undoClearTransactions(); setUndoAvailable(false); }}>Undo</Button>
+              <span>{t('undoAvailable')}</span>
+              <Button type="button" variant="outline" size="sm" onClick={() => { undoClearTransactions(); setUndoAvailable(false); }}>{t('undo')}</Button>
             </AlertDescription>
           </Alert>
         )}
@@ -85,7 +87,7 @@ const TransactionList = () => {
                       <Avatar name={getMemberName(transaction.to)} className="w-7 h-7 text-[10px]" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm text-muted-foreground">
+                      <p className="truncate text-sm text-muted-foreground">
                         <span className="text-foreground">{getMemberName(transaction.from)}</span>
                         {' → '}
                         <span className="text-foreground">{getMemberName(transaction.to)}</span>
@@ -94,10 +96,10 @@ const TransactionList = () => {
                   </div>
                   <div className="text-right flex-shrink-0 ml-3">
                     <p className="amount text-sm font-semibold text-foreground">
-                      {transaction.amount.toLocaleString('vi-VN')} đ
+                      {formatVnd(transaction.amount)}
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      {new Date(transaction.paidAt).toLocaleDateString('vi-VN', {
+                      {new Date(transaction.paidAt).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US', {
                         month: 'short',
                         day: 'numeric',
                         hour: '2-digit',
@@ -110,7 +112,7 @@ const TransactionList = () => {
           </div>
         ) : (
           <p className="text-center text-muted-foreground py-4">
-            No transactions recorded yet.
+            {t('noTransactions')}
           </p>
         )}
       </CardContent>

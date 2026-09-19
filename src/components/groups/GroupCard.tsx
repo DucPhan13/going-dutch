@@ -3,6 +3,7 @@ import { Group } from '@/types';
 import { useNavigate } from 'react-router-dom';
 import Avatar from '@/components/ui/avatar';
 import { ArrowUpRight, ReceiptText, Users } from 'lucide-react';
+import { usePreferences } from '@/contexts/PreferencesContext';
 
 interface GroupCardProps {
   group: Group;
@@ -10,12 +11,9 @@ interface GroupCardProps {
 
 export default function GroupCard({ group }: GroupCardProps) {
   const navigate = useNavigate();
+  const { t, formatVnd } = usePreferences();
 
   const totalExpenses = group.expenses.reduce((sum, expense) => sum + expense.amount, 0);
-
-  const formatVND = (amount: number) => {
-    return amount.toLocaleString('vi-VN');
-  };
 
   return (
     <Card
@@ -27,7 +25,7 @@ export default function GroupCard({ group }: GroupCardProps) {
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <p className="section-label mb-1">Shared group</p>
+            <p className="section-label mb-1">{t('sharedGroup')}</p>
             <h3 className="text-lg font-semibold text-foreground truncate">
               {group.name}
             </h3>
@@ -40,15 +38,15 @@ export default function GroupCard({ group }: GroupCardProps) {
               <Avatar key={member.id} name={member.name} className="w-7 h-7 border-2 border-background text-[10px]" />
             ))}
           </div>
-          <span className="flex items-center gap-1 text-xs text-muted-foreground"><Users className="h-3.5 w-3.5" />{group.members.length} people</span>
+          <span className="flex items-center gap-1 text-xs text-muted-foreground"><Users className="h-3.5 w-3.5" />{t('people', { count: group.members.length })}</span>
         </div>
         <div className="mt-5 flex items-end justify-between border-t border-border pt-4">
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <ReceiptText className="w-3.5 h-3.5" />
-            {group.expenses.length} expense{group.expenses.length !== 1 ? 's' : ''}
+            {t('expenseCount', { count: group.expenses.length })}
           </span>
-          <span className="amount text-base font-semibold balance-positive">
-            {formatVND(totalExpenses)} đ
+          <span className="amount text-base font-semibold text-foreground">
+            {formatVnd(totalExpenses)}
           </span>
         </div>
       </CardContent>

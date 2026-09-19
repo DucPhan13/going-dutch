@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Edit2, Trash2, User, Utensils, Home, Car, Plane, Ticket } from 'lucide-react';
 import Avatar from '@/components/ui/avatar';
+import { usePreferences } from '@/contexts/PreferencesContext';
 
 interface ExpenseCardProps {
   expense: Expense;
@@ -12,8 +13,9 @@ interface ExpenseCardProps {
 }
 
 const ExpenseCard = ({ expense, members, onEdit, onDelete }: ExpenseCardProps) => {
+  const { t, formatVnd } = usePreferences();
   const getMemberName = (id: string) => {
-    return members.find(member => member.id === id)?.name || 'Unknown';
+    return members.find(member => member.id === id)?.name || t('unknown');
   };
 
   const Icon = expense.category === 'Food & drinks' ? Utensils : expense.category === 'Home' ? Home : expense.category === 'Transport' ? Car : expense.category === 'Travel' ? Plane : expense.category === 'Entertainment' ? Ticket : User;
@@ -28,21 +30,19 @@ const ExpenseCard = ({ expense, members, onEdit, onDelete }: ExpenseCardProps) =
             </div>
             <div className="min-w-0">
               <h3 className="font-medium text-foreground truncate">{expense.description}</h3>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                by <span className="text-foreground font-medium">{getMemberName(expense.paidBy)}</span>
+              <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                {t('paidByPerson', { name: getMemberName(expense.paidBy) })}
               </p>
               <div className="flex items-center gap-1.5 mt-2">
                 <div className="flex -space-x-1.5">
                   {expense.participants.slice(0, 3).map((id) => (
-                    <Avatar key={id} name={getMemberName(id)} className="w-5 h-5 border border-background text-[9px]" />
+                    <Avatar key={id} name={getMemberName(id)} className="w-5 h-5 border border-background text-xs" />
                   ))}
                 </div>
                 {expense.participants.length > 3 && (
-                  <span className="text-[10px] text-muted-foreground ml-0.5">+{expense.participants.length - 3}</span>
+                  <span className="ml-0.5 text-xs text-muted-foreground">+{expense.participants.length - 3}</span>
                 )}
-                <span className="text-[10px] text-muted-foreground ml-1">
-                  {expense.participants.length} split
-                </span>
+                <span className="ml-1 text-xs text-muted-foreground">{t('people', { count: expense.participants.length })}</span>
               </div>
             </div>
           </div>
@@ -54,7 +54,7 @@ const ExpenseCard = ({ expense, members, onEdit, onDelete }: ExpenseCardProps) =
                 size="icon"
                 onClick={onEdit}
                 className="h-10 w-10 hover:bg-accent text-muted-foreground hover:text-foreground"
-                aria-label="Edit expense"
+                aria-label={t('editExpenseLabel')}
               >
                 <Edit2 className="h-3.5 w-3.5" />
               </Button>
@@ -63,13 +63,13 @@ const ExpenseCard = ({ expense, members, onEdit, onDelete }: ExpenseCardProps) =
                 size="icon"
                 className="h-10 w-10 text-destructive hover:bg-destructive/10 hover:text-destructive"
                 onClick={onDelete}
-                aria-label="Delete expense"
+                aria-label={t('deleteExpenseLabel')}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </div>
             <p className="amount text-lg font-semibold text-foreground">
-              {expense.amount.toLocaleString('vi-VN')} đ
+              {formatVnd(expense.amount)}
             </p>
           </div>
         </div>

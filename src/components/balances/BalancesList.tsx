@@ -17,7 +17,7 @@ const BalancesList = ({ balances }: BalancesListProps) => {
   if (!currentGroup) return null;
 
   const getMemberName = (id: string) => {
-    return currentGroup.members.find((member) => member.id === id)?.name || 'Unknown';
+    return currentGroup.members.find((member) => member.id === id)?.name || t('unknown');
   };
 
   return (

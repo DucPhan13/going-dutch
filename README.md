@@ -24,6 +24,8 @@ That also means clearing your browser data clears the app's data. The app only k
 
 Open a group and choose **Sync** to transfer that group to another device.
 
+On the receiving device, choose **Join transfer** from the Groups screen and enter the sender's six-digit code.
+
 - **Sync nearby** connects two open browsers directly on the same Wi-Fi. The sender shows a QR code and six-digit code that expires after 60 seconds. Cloudflare coordinates the WebRTC connection, while group data travels directly between the devices.
 - **Encrypted cloud transfer** is an optional fallback for a deployed Cloudflare relay. It is manual, temporary, and end-to-end encrypted; Cloudflare receives encrypted frames only.
 - **Encrypted file backup** creates a password-protected `.going-dutch-sync` file for recovery or manual transfer via AirDrop, Nearby Share, Bluetooth, USB, or removable storage.
@@ -48,6 +50,7 @@ Going Dutch is installable as a PWA. Open it online once so the app shell is cac
 - Split equally, by shares, percentage, or exact amount.
 - View activity, balances, and suggested payments.
 - Record payments when the group settles up.
+- Receive a nearby transfer with six single-digit code inputs that support auto-advance, backspace, and full-code paste.
 
 ## Run locally
 
@@ -65,11 +68,4 @@ Vite, React 18, TypeScript, Tailwind CSS, shadcn/ui, and Cloudflare Workers.
 
 ## Changelog
 
-### 2026-07-31 — Nearby device sync
-
-- Replaced manual WebRTC offer and answer exchange with a QR code and six-digit pairing room.
-- Added a 60-second expiry for pairing codes and Cloudflare Durable Object signaling rooms.
-- Kept group transfer peer-to-peer over WebRTC; the Worker exchanges connection signals only.
-- Added clear waiting, connecting, transferring, merging, success, and failure states.
-- Pairing dialogs now show completion briefly, then close automatically on both devices.
-- Connection and configuration errors remain visible with retry or fallback actions.
+See [CHANGELOG.md](CHANGELOG.md).
