@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => ({
     cloudflare(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.ico", "app-icon.svg"],
+      includeAssets: ["app-icon.svg", "apple-touch-icon.png"],
       manifest: {
         name: "Going Dutch",
         short_name: "Going Dutch",
